@@ -1,19 +1,26 @@
 import React from "react";
-import { TouchableOpacity, Text, StyleSheet, Dimensions, View } from "react-native";
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from "react-native";
 import COLORS from "../constants/Colors";
 import FONTS from "../constants/Fonts";
 
-const { height,width } = Dimensions.get("screen");
+const { width } = Dimensions.get("screen");
 
 const setWidth = (w) => (width / 100) * w;
 
-const GenreCard = () => {
-  return (
-    <View style={styles.container} >
-      <Text>
-        Action
-      </Text>
-    </View>
+const GenreCard = ({genreName,active,onPress}) => {
+  return (  
+    <TouchableOpacity
+      style={{
+        ...styles.container,
+        backgroundColor: active ? COLORS.ACTIVE : COLORS.WHITE,
+      }}
+      activeOpacity={0.5}
+      onPress={() => onPress && onPress(genreName)}
+    >
+      <Text style={{
+        ...styles.genreText,
+        color: active ? COLORS.WHITE : COLORS.BLACK,}}>{genreName}</Text>
+    </TouchableOpacity>
   );
 };
 
@@ -36,3 +43,4 @@ const styles = StyleSheet.create({
 });
 
 export default GenreCard;
+
