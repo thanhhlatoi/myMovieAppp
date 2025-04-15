@@ -1,5 +1,5 @@
 const login = async (email, password) => {
-    const response = await fetch('http://192.168.0.117:8082/auth/login', {
+    const response = await fetch('http://192.168.100.193:8082/auth/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

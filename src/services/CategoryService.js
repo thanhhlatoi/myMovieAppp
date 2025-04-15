@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://192.168.0.117:8082/api/category"; 
+const API_BASE_URL = "http://192.168.100.193:8082/api/category"; 
 
 const CategoryService = {
   getAllCategories: async (page = 0, size = 10) => {

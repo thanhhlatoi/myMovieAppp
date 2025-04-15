@@ -3,6 +3,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
 import HomeScreen from "./src/screens/HomeScreen";
 import MovieScreen from "./src/screens/MovieScreen";
+import VideoPlayerScreen from "./src/screens/VideoPlayerScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SearchScreen from "./src/screens/SearchScreen";
 import { useFonts } from "expo-font";
@@ -48,6 +49,7 @@ export default function App() {
           component={MovieScreen}
           options={{ headerShown: false }}
         />
+        <Stack.Screen name="VideoPlayerScreen" component={VideoPlayerScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

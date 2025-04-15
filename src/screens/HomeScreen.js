@@ -50,7 +50,18 @@ const HomeScreen = ({ navigation }) => {
     fetchMovies();
   }, []);
 
-  
+
+// Hàm xử lý khi nhấn vào một movie
+const handleMoviePress = async (movieId) => {
+  try {
+    const response = await MovieService.getMovieById(movieId);
+    console.log("🎬 Chi tiết phim:", response); // Chứa cả `status` và `data`
+
+    navigation.navigate("movie", { movie: response }); // truyền cả response
+  } catch (error) {
+    console.error("❌ Lỗi khi lấy chi tiết phim:", error);
+  }
+};
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -96,14 +107,26 @@ const HomeScreen = ({ navigation }) => {
           horizontal
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item, index) => `${item.title}-${index}`}
-          ItemSeparatorComponent={() => <ItemSeparator width={20} />}
-          ListHeaderComponent={() => <ItemSeparator width={20} />}
-          ListFooterComponent={() => <ItemSeparator width={20} />}
-          renderItem={({ item }) => (
-            <MovieCard movie={item} onPress={() => navigation.navigate("movie", { movie: item })} />
-          )}
+          ItemSeparatorComponent={() => <ItemSeparator width={5} />}
+          ListHeaderComponent={() => <ItemSeparator width={5} />}
+          ListFooterComponent={() => <ItemSeparator width={5} />}
+      //     renderItem={({ item }) => (
+      //       <MovieCard movie={item} onPress={() => navigation.navigate("movie", { movie: item })} />
+      //     )}
+      //   />
+      // </View>
+      renderItem={({ item }) => (
+        <MovieCard
+          movie={item}
+          onPress={() => {
+            handleMoviePress(item.id)  // Gọi hàm handleMoviePress với movie.id
+            
+          }}
         />
-      </View>
+      )}
+      
+    />
+  </View>
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Coming Soon</Text>
         <Text style={styles.headerSubTitle}>VIEW ALL</Text>

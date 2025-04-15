@@ -21,7 +21,7 @@ const MovieCard = ({ movie = {}, heartLess = true,onPress }) => {
       <View style={styles.container}>
         <ImageBackground
            source={{
-            uri: `http://192.168.0.117:8082/api/movieProduct/view?bucketName=thanh&path=${movie.imgMovie}`,
+            uri: `http://192.168.100.193:8082/api/movieProduct/view?bucketName=thanh&path=${movie.imgMovie}`,
           }}
           resizeMode="cover"
           style={styles.imageBackground}
@@ -75,8 +75,8 @@ const MovieCard = ({ movie = {}, heartLess = true,onPress }) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.ACTIVE,
-    height: 340,
-    width: 230,
+    height: 200,
+    width: 130,
     borderRadius: 12,
     elevation: 5,
     marginVertical: 2,
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
   movieTitle: {
     paddingVertical: 2,
     marginTop: 5,
-    width: 230,
+    width: 130,
   },
   movieSubTitleContainer: {
     flexDirection: "row",
