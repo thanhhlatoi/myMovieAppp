@@ -2,70 +2,101 @@ import React, { useState } from 'react';
 import {
   View,
   TextInput,
-  Button,
   StyleSheet,
   Alert,
   Text,
-  TouchableOpacity
+  TouchableOpacity,
+  ActivityIndicator
 } from 'react-native';
-import AuthService from '../services/AuthService'; // Đảm bảo file này tồn tại và export đúng
+import AuthService from '../services/AuthService';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
+    // Validate inputs
+    if (!email || !password) {
+      Alert.alert('Lỗi', 'Vui lòng nhập email và mật khẩu');
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
+      // Attempt to log in
       const data = await AuthService.login(email, password);
 
-      if (data?.user?.roles?.[0]?.name === 'USERS') {
-        Alert.alert('Đăng nhập thành công');
-        console.log('Token:', data.token);
-
-        // CHUYỂN MÀN HÌNH HOME
-        navigation.navigate('home'); 
+      // Kiểm tra và điều hướng
+      if (data.user && data.user.roles) {
+        const userRole = data.user.roles[0]?.name;
+        if (userRole === 'USERS') {
+          // Điều hướng đến màn hình chính
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'home' }],
+          });
+        } else {
+          Alert.alert('Lỗi', 'Bạn không có quyền truy cập');
+        }
       } else {
-        Alert.alert('Bạn không có quyền đăng nhập');
+        Alert.alert('Lỗi', 'Không thể xác định vai trò người dùng');
       }
     } catch (error) {
-      Alert.alert('Lỗi', error?.message || 'Đã có lỗi xảy ra');
+      // Xử lý lỗi đăng nhập
+      Alert.alert(
+          'Đăng nhập thất bại',
+          error.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.'
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <View style={styles.background}>
-      <View style={styles.overlay}>
-        <Text style={styles.title}>Đăng nhập</Text>
+      <View style={styles.background}>
+        <View style={styles.overlay}>
+          <Text style={styles.title}>Đăng nhập</Text>
 
-        <TextInput
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          style={styles.input}
-        />
-        <TextInput
-          placeholder="Mật khẩu"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-        />
+          <TextInput
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.input}
+          />
+          <TextInput
+              placeholder="Mật khẩu"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              style={styles.input}
+          />
 
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Đăng nhập</Text>
-        </TouchableOpacity>
+          {isLoading ? (
+              <ActivityIndicator size="large" color="#4CAF50" />
+          ) : (
+              <TouchableOpacity
+                  style={styles.loginButton}
+                  onPress={handleLogin}
+                  disabled={isLoading}
+              >
+                <Text style={styles.buttonText}>Đăng nhập</Text>
+              </TouchableOpacity>
+          )}
 
-        <View style={styles.footer}>
-          <TouchableOpacity onPress={() => Alert.alert('Quên mật khẩu')}>
-            <Text style={styles.footerText}>Quên mật khẩu?</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => Alert.alert('Đăng ký')}>
-            <Text style={styles.footerText}>Chưa có tài khoản? Đăng ký</Text>
-          </TouchableOpacity>
+          <View style={styles.footer}>
+            <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+              <Text style={styles.footerText}>Quên mật khẩu?</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <Text style={styles.footerText}>Chưa có tài khoản? Đăng ký</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
-    </View>
   );
 };
 
@@ -74,10 +105,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#E3F2FD', // Màu nền xanh nhạt
+    backgroundColor: '#E3F2FD',
   },
   overlay: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // Overlay tối để tăng độ rõ nét của văn bản
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     padding: 30,
     borderRadius: 10,
     width: '80%',
@@ -85,7 +116,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 30,
-    color: '#ffffff', // Màu chữ trắng
+    color: '#ffffff',
     fontWeight: 'bold',
     marginBottom: 20,
   },
@@ -94,18 +125,18 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 15,
     borderRadius: 5,
-    backgroundColor: '#ffffff', // Màu nền trắng cho input
+    backgroundColor: '#ffffff',
     fontSize: 16,
   },
   loginButton: {
     width: '100%',
     padding: 15,
-    backgroundColor: '#4CAF50', // Màu xanh lá cây cho nút đăng nhập
+    backgroundColor: '#4CAF50',
     borderRadius: 5,
     alignItems: 'center',
   },
   buttonText: {
-    color: '#ffffff', // Màu chữ trắng cho nút
+    color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 16,
   },
@@ -115,7 +146,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footerText: {
-    color: '#42A5F5', // Màu xanh dương cho văn bản footer
+    color: '#42A5F5',
     fontSize: 14,
     marginVertical: 5,
   },
