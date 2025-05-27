@@ -1,166 +1,563 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, FlatList, TouchableOpacity, Linking } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  ScrollView,
+  FlatList,
+  TouchableOpacity,
+  ImageBackground,
+  Dimensions,
+  StatusBar,
+  Animated
+} from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+
+const { width, height } = Dimensions.get('window');
 
 const MovieScreen = ({ route, navigation }) => {
-  const movie = route.params?.movie?.data;
-  console.log("📦 Dữ liệu nhận được từ route.params:", movie);
+  const movie = route.params?.movie?.data || route.params?.movie;
+  const [liked, setLiked] = useState(false);
+  const [bookmarked, setBookmarked] = useState(false);
+
+  console.log("📦 Dữ liệu phim:", movie);
 
   if (!movie) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.noDataText}>Không có dữ liệu phim.</Text>
-      </View>
+        <View style={styles.errorContainer}>
+          <Icon name="movie" size={80} color="#666" />
+          <Text style={styles.errorText}>Không tìm thấy thông tin phim</Text>
+          <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>Quay lại</Text>
+          </TouchableOpacity>
+        </View>
     );
   }
 
   const handleWatchMovie = () => {
-    // Điều hướng đến VideoPlayerScreen với URL phim
-    const movieUrl = `http://192.168.100.193:8082/api/videos/hls-stream?bucketName=thanh&path=cc/output.m3u8`;
-    console.log("🔗 Đang chuyển tới màn hình phát video:", movieUrl);
-    navigation.navigate('VideoPlayerScreen', { movieUrl }); // Điều hướng đến VideoPlayerScreen
+    console.log("🎬 Bắt đầu xem phim:", movie.title);
+    navigation.navigate('VideoPlayerScreen', { movie });
   };
 
+  const handleLike = () => {
+    setLiked(!liked);
+    // TODO: Call API to update like status
+  };
+
+  const handleBookmark = () => {
+    setBookmarked(!bookmarked);
+    // TODO: Call API to update bookmark status
+  };
+
+  const imageUri = movie.imgMovie
+      ? `http://192.168.100.193:8082/api/movieProduct/view?bucketName=thanh&path=${movie.imgMovie}`
+      : 'https://via.placeholder.com/400x600/333/FFF?text=No+Image';
+
   return (
-    <ScrollView style={styles.container}>
-      {/* Header: Tên phim và hình ảnh */}
-      <View style={styles.header}>
-        <Image
-          source={{
-            uri: `http://192.168.100.193:8082/api/movieProduct/view?bucketName=thanh&path=${movie.imgMovie}`,
-          }}
-          style={styles.image}
-          resizeMode="cover"
-        />
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>{movie.title}</Text>
-        </View>
-      </View>
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Mô tả phim */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Mô tả:</Text>
-        <Text style={styles.text}>{movie.description}</Text>
-      </View>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          {/* Hero Section */}
+          <View style={styles.heroSection}>
+            <ImageBackground
+                source={{ uri: imageUri }}
+                style={styles.heroBackground}
+                resizeMode="cover"
+            >
+              <View style={styles.heroOverlay}>
+                {/* Back Button */}
+                <TouchableOpacity
+                    style={styles.backIcon}
+                    onPress={() => navigation.goBack()}
+                >
+                  <Icon name="arrow-back" size={28} color="#fff" />
+                </TouchableOpacity>
 
-      {/* Thể loại */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Thể loại:</Text>
-        <Text style={styles.text}>{movie.genre?.name || "Không rõ"}</Text>
-      </View>
+                {/* Share Button */}
+                <TouchableOpacity style={styles.shareIcon}>
+                  <Icon name="share" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
 
-      {/* Tác giả */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Tác giả:</Text>
-        {Array.isArray(movie.author) && movie.author.length > 0 ? (
-          <FlatList
-            horizontal
-            data={movie.author}
-            keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => <Text style={styles.text}>- {item.fullName}</Text>}
-          />
-        ) : (
-          <Text style={styles.text}>Không có</Text>
-        )}
-      </View>
+              {/* Movie Info Overlay */}
+              <View style={styles.movieInfoOverlay}>
+                <Text style={styles.movieTitle}>{movie.title}</Text>
 
-      {/* Diễn viên */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Diễn viên:</Text>
-        {Array.isArray(movie.performer) && movie.performer.length > 0 ? (
-          <FlatList
-            horizontal
-            data={movie.performer}
-            keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => <Text style={styles.text}>- {item.name}</Text>}
-          />
-        ) : (
-          <Text style={styles.text}>Không có</Text>
-        )}
-      </View>
+                <View style={styles.movieMeta}>
+                  <View style={styles.metaItem}>
+                    <Icon name="calendar-today" size={16} color="#ccc" />
+                    <Text style={styles.metaText}>{movie.year || "2024"}</Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Icon name="access-time" size={16} color="#ccc" />
+                    <Text style={styles.metaText}>{movie.time || "N/A"} phút</Text>
+                  </View>
+                  <View style={styles.metaItem}>
+                    <Icon name="visibility" size={16} color="#ccc" />
+                    <Text style={styles.metaText}>{movie.views} lượt xem</Text>
+                  </View>
+                </View>
 
-      {/* Lượt thích và không thích */}
-      <View style={styles.likesContainer}>
-        <Text style={styles.likesText}>Lượt thích: {movie.likes}</Text>
-        <Text style={styles.likesText}>Lượt không thích: {movie.dislikes}</Text>
-      </View>
+                {/* Rating */}
+                <View style={styles.ratingContainer}>
+                  <Icon name="star" size={20} color="#FFD700" />
+                  <Text style={styles.ratingText}>
+                    {movie.rating || (movie.likes > movie.dislikes ? "8.5" : "7.2")}
+                  </Text>
+                  <Text style={styles.ratingSubtext}>
+                    ({movie.likes + movie.dislikes} đánh giá)
+                  </Text>
+                </View>
+              </View>
+            </ImageBackground>
+          </View>
 
-      {/* Nút xem phim */}
-      <TouchableOpacity style={styles.watchButton} onPress={handleWatchMovie}>
-        <Text style={styles.watchButtonText}>Xem Phim</Text>
-      </TouchableOpacity>
-    </ScrollView>
+          {/* Action Buttons */}
+          <View style={styles.actionSection}>
+            <TouchableOpacity style={styles.playButton} onPress={handleWatchMovie}>
+              <Icon name="play-arrow" size={24} color="#fff" />
+              <Text style={styles.playButtonText}>Xem Phim</Text>
+            </TouchableOpacity>
+
+            <View style={styles.secondaryActions}>
+              <TouchableOpacity
+                  style={[styles.actionButton, liked && styles.actionButtonActive]}
+                  onPress={handleLike}
+              >
+                <Ionicons
+                    name={liked ? "heart" : "heart-outline"}
+                    size={24}
+                    color={liked ? "#E50914" : "#fff"}
+                />
+                <Text style={styles.actionButtonText}>
+                  {movie.likes || 0}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                  style={[styles.actionButton, bookmarked && styles.actionButtonActive]}
+                  onPress={handleBookmark}
+              >
+                <Ionicons
+                    name={bookmarked ? "bookmark" : "bookmark-outline"}
+                    size={24}
+                    color={bookmarked ? "#FFD700" : "#fff"}
+                />
+                <Text style={styles.actionButtonText}>Lưu</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButton}>
+                <Icon name="download" size={24} color="#fff" />
+                <Text style={styles.actionButtonText}>Tải</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Movie Details */}
+          <View style={styles.detailsSection}>
+            {/* Description */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>📖 Nội dung phim</Text>
+              <Text style={styles.description}>
+                {movie.description || "Chưa có mô tả cho bộ phim này."}
+              </Text>
+            </View>
+
+            {/* Genres */}
+            {movie.genres && movie.genres.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>🎭 Thể loại</Text>
+                  <View style={styles.genresContainer}>
+                    {movie.genres.map((genre, index) => (
+                        <View key={index} style={styles.genreChip}>
+                          <Text style={styles.genreText}>{genre.name}</Text>
+                        </View>
+                    ))}
+                  </View>
+                </View>
+            )}
+
+            {/* Director/Author */}
+            {movie.author && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>🎬 Đạo diễn</Text>
+                  <View style={styles.personCard}>
+                    <Image
+                        source={{
+                          uri: movie.author.avatar
+                              ? `http://192.168.100.193:8082/api/movieProduct/view?bucketName=thanh&path=${movie.author.avatar}`
+                              : 'https://via.placeholder.com/60x60/333/FFF?text=Dir'
+                        }}
+                        style={styles.personAvatar}
+                    />
+                    <View style={styles.personInfo}>
+                      <Text style={styles.personName}>{movie.author.fullName}</Text>
+                      <Text style={styles.personDetails}>
+                        {movie.author.country} • {movie.author.description}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+            )}
+
+            {/* Cast/Performers */}
+            {movie.performers && movie.performers.length > 0 && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>🎭 Diễn viên</Text>
+                  <FlatList
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      data={movie.performers}
+                      keyExtractor={(item, index) => index.toString()}
+                      renderItem={({ item }) => (
+                          <View style={styles.castCard}>
+                            <Image
+                                source={{
+                                  uri: item.avatar
+                                      ? `http://192.168.100.193:8082/api/movieProduct/view?bucketName=thanh&path=${item.avatar}`
+                                      : 'https://via.placeholder.com/80x80/333/FFF?text=Actor'
+                                }}
+                                style={styles.castAvatar}
+                            />
+                            <Text style={styles.castName} numberOfLines={2}>
+                              {item.fullName}
+                            </Text>
+                          </View>
+                      )}
+                      ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
+                      contentContainerStyle={styles.castList}
+                  />
+                </View>
+            )}
+
+            {/* Category */}
+            {movie.category && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>📂 Danh mục</Text>
+                  <View style={styles.categoryChip}>
+                    <Text style={styles.categoryText}>{movie.category.name}</Text>
+                  </View>
+                </View>
+            )}
+
+            {/* Stats */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>📊 Thống kê</Text>
+              <View style={styles.statsContainer}>
+                <View style={styles.statItem}>
+                  <Icon name="thumb-up" size={20} color="#4CAF50" />
+                  <Text style={styles.statNumber}>{movie.likes || 0}</Text>
+                  <Text style={styles.statLabel}>Thích</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Icon name="thumb-down" size={20} color="#F44336" />
+                  <Text style={styles.statNumber}>{movie.dislikes || 0}</Text>
+                  <Text style={styles.statLabel}>Không thích</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Icon name="visibility" size={20} color="#2196F3" />
+                  <Text style={styles.statNumber}>{movie.views || 0}</Text>
+                  <Text style={styles.statLabel}>Lượt xem</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Related Movies Section Placeholder */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>🍿 Phim liên quan</Text>
+              <Text style={styles.comingSoonText}>Sắp có...</Text>
+            </View>
+          </View>
+
+          {/* Bottom Spacing */}
+          <View style={styles.bottomSpacing} />
+        </ScrollView>
+
+        {/* Floating Play Button */}
+        <TouchableOpacity
+            style={styles.floatingPlayButton}
+            onPress={handleWatchMovie}
+        >
+          <Icon name="play-arrow" size={32} color="#fff" />
+        </TouchableOpacity>
+      </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#141414',
-    padding: 16,
+    backgroundColor: '#000',
   },
-  noDataText: {
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+    padding: 20,
+  },
+  errorText: {
     color: '#fff',
-    textAlign: 'center',
     fontSize: 18,
+    textAlign: 'center',
     marginTop: 20,
+    marginBottom: 30,
   },
-  header: {
-    position: 'relative',
-    marginBottom: 16,
+  backButton: {
+    backgroundColor: '#E50914',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
   },
-  image: {
-    width: '100%',
-    height: 300,
-    borderRadius: 8,
-    opacity: 0.7,
-  },
-  titleContainer: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    padding: 10,
-    borderRadius: 8,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: 'bold',
+  backButtonText: {
     color: '#fff',
-  },
-  section: {
-    marginTop: 16,
-  },
-  label: {
-    fontWeight: 'bold',
     fontSize: 16,
-    color: '#fff',
+    fontWeight: 'bold',
   },
-  text: {
-    fontSize: 15,
+  heroSection: {
+    height: height * 0.6,
+    position: 'relative',
+  },
+  heroBackground: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  heroOverlay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 50,
+  },
+  backIcon: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  shareIcon: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 10,
+  },
+  movieInfoOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 20,
+    paddingBottom: 30,
+  },
+  movieTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  movieMeta: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 20,
+  },
+  metaText: {
     color: '#ccc',
-    marginTop: 5,
+    fontSize: 14,
+    marginLeft: 4,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingText: {
+    color: '#FFD700',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 5,
+  },
+  ratingSubtext: {
+    color: '#ccc',
+    fontSize: 14,
     marginLeft: 8,
   },
-  likesContainer: {
-    marginTop: 20,
+  actionSection: {
+    padding: 20,
+    backgroundColor: '#111',
   },
-  likesText: {
-    fontSize: 16,
-    color: '#fff',
-    marginTop: 5,
-  },
-  watchButton: {
-    backgroundColor: '#ff6600',
-    paddingVertical: 12,
-    borderRadius: 8,
+  playButton: {
+    backgroundColor: '#E50914',
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 8,
+    marginBottom: 15,
   },
-  watchButtonText: {
-    fontSize: 18,
+  playButtonText: {
     color: '#fff',
+    fontSize: 18,
     fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  actionButton: {
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    minWidth: 60,
+  },
+  actionButtonActive: {
+    backgroundColor: 'rgba(229, 9, 20, 0.2)',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  detailsSection: {
+    backgroundColor: '#111',
+    paddingHorizontal: 20,
+  },
+  section: {
+    marginBottom: 25,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  description: {
+    fontSize: 16,
+    color: '#ccc',
+    lineHeight: 24,
+  },
+  genresContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  genreChip: {
+    backgroundColor: '#E50914',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  genreText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  personCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    padding: 15,
+    borderRadius: 12,
+  },
+  personAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 15,
+  },
+  personInfo: {
+    flex: 1,
+  },
+  personName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  personDetails: {
+    fontSize: 14,
+    color: '#ccc',
+  },
+  castList: {
+    paddingLeft: 20,
+  },
+  castCard: {
+    alignItems: 'center',
+    width: 90,
+  },
+  castAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 8,
+  },
+  castName: {
+    fontSize: 12,
+    color: '#fff',
+    textAlign: 'center',
+  },
+  categoryChip: {
+    backgroundColor: '#333',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  categoryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#1a1a1a',
+    padding: 20,
+    borderRadius: 12,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#ccc',
+    marginTop: 4,
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    padding: 20,
+  },
+  bottomSpacing: {
+    height: 100,
+  },
+  floatingPlayButton: {
+    position: 'absolute',
+    bottom: 30,
+    right: 30,
+    backgroundColor: '#E50914',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#E50914',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
 });
 

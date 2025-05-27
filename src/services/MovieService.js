@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://192.168.100.193:8082/api/movieProduct"; 
+const API_BASE_URL = "http://192.168.100.193:8082/api/movieProduct";
 
 const MovieService = {
   getAllMovies: async (page = 0, size = 10) => {
@@ -9,7 +9,7 @@ const MovieService = {
           "Content-Type": "application/json",
         },
       });
-      
+
       if (!response.ok) {
         throw new Error(`Lỗi HTTP! Status: ${response.status}`);
       }
@@ -46,4 +46,4 @@ const MovieService = {
   }
 };
 
-export default MovieService; 
+export default MovieService;

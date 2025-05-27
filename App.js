@@ -1,3 +1,12 @@
+import { LogBox } from 'react-native';
+
+// Chặn warning liên quan đến expo-av
+LogBox.ignoreLogs([
+  '[expo-av]: Video component from `expo-av` is deprecated',
+]);
+
+
+
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
@@ -7,7 +16,8 @@ import VideoPlayerScreen from "./src/screens/VideoPlayerScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SearchScreen from "./src/screens/SearchScreen";
 import { useFonts } from "expo-font";
-import { View, ActivityIndicator } from "react-native"; // thay thế AppLoading vì expo-app-loading bị deprecated
+import { View, ActivityIndicator } from "react-native";
+import WatchScreen from "./src/screens/WatchScreen"; // thay thế AppLoading vì expo-app-loading bị deprecated
 
 const Stack = createStackNavigator();
 
@@ -50,6 +60,7 @@ export default function App() {
           options={{ headerShown: false }}
         />
         <Stack.Screen name="VideoPlayerScreen" component={VideoPlayerScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="VideoPlayer" component={WatchScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
