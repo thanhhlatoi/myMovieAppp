@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { jwtDecode } from 'jwt-decode'; // Thêm import này
 
-const API_URL = 'http://192.168.100.193:8082/api/auth/login';
+const API_URL = 'http://192.168.1.73:8082/api/auth/login';
 
 const AuthService = {
     login: async (email, password) => {

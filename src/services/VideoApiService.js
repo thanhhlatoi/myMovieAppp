@@ -1,7 +1,7 @@
 // VideoApiService.js - Xử lý Master Playlist và Sub-playlist HLS
 class VideoApiService {
     constructor() {
-        this.baseURL = 'http://192.168.100.193:8082/api/videofilm';
+        this.baseURL = 'http://192.168.1.73:8082/api/videofilm';
     }
 
     async handleResponse(response) {

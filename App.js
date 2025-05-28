@@ -17,7 +17,9 @@ import LoginScreen from "./src/screens/LoginScreen";
 import SearchScreen from "./src/screens/SearchScreen";
 import { useFonts } from "expo-font";
 import { View, ActivityIndicator } from "react-native";
-import WatchScreen from "./src/screens/WatchScreen"; // thay thế AppLoading vì expo-app-loading bị deprecated
+import WatchScreen from "./src/screens/WatchScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
+import FavoritesScreen from "./src/screens/FavoritesScreen"; // thay thế AppLoading vì expo-app-loading bị deprecated
 
 const Stack = createStackNavigator();
 
@@ -61,6 +63,8 @@ export default function App() {
         />
         <Stack.Screen name="VideoPlayerScreen" component={VideoPlayerScreen} options={{ headerShown: false }} />
         <Stack.Screen name="VideoPlayer" component={WatchScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
