@@ -1,7 +1,8 @@
-// VideoApiService.js - Xử lý Master Playlist và Sub-playlist HLS
+// VideoApiService.js - Updated cho Mobile Streaming
 class VideoApiService {
     constructor() {
-        this.baseURL = 'http://192.168.1.73:8082/api/videofilm';
+        // Thay đổi base URL để chỉ sử dụng mobile endpoints
+        this.baseURL = 'http://192.168.100.193:8082/api/videofilm';
     }
 
     async handleResponse(response) {
@@ -62,126 +63,144 @@ class VideoApiService {
         }
     }
 
-    // === HLS STREAMING API ===
+    // === MOBILE HLS STREAMING API ===
 
     /**
-     * 1. Lấy MASTER PLAYLIST - Chứa danh sách các quality levels
-     * URL: http://192.168.1.73:8082/api/videofilm/stream/web/2
+     * 1. Lấy MASTER PLAYLIST cho Mobile - Chứa danh sách các quality levels
+     * URL: http://192.168.100.193:8082/api/videofilm/stream/mobile/2
      * Trả về: Master playlist với danh sách các sub-playlist (quality levels)
      */
     async getMasterPlaylist(videoId) {
         try {
-            console.log(`🎬 Getting master playlist for video ${videoId}`);
+            console.log(`🎬 Getting MOBILE master playlist for video ${videoId}`);
 
-            // Luôn sử dụng fetch + text() để lấy nội dung master playlist
-            const response = await fetch(`${this.baseURL}/stream/web/${videoId}`);
+            const response = await fetch(`${this.baseURL}/stream/mobile/${videoId}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/x-mpegURL, text/plain, */*',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+
             if (!response.ok) {
-                throw new Error(`Failed to fetch master playlist: ${response.status} ${response.statusText}`);
+                throw new Error(`Failed to fetch mobile master playlist: ${response.status} ${response.statusText}`);
             }
 
-            // Luôn đọc response dưới dạng text
             const content = await response.text();
-            console.log('📋 Master playlist content:', content);
+            console.log('📋 Mobile master playlist content preview:', content.substring(0, 500));
             return content;
         } catch (error) {
-            console.error('Error fetching master playlist:', error);
+            console.error('❌ Error fetching mobile master playlist:', error);
             throw error;
         }
     }
 
     /**
-     * 2. Lấy SUB-PLAYLIST - Chứa danh sách segments cho quality cụ thể
-     * URL: http://192.168.1.73:8082/api/videofilm/playlist/web/2/index_0.m3u8
+     * 2. Lấy SUB-PLAYLIST cho Mobile - Chứa danh sách segments cho quality cụ thể
+     * URL: http://192.168.100.193:8082/api/videofilm/playlist/mobile/2/index_0.m3u8
      * Trả về: Sub-playlist với danh sách segments (.ts files)
      */
     async getSubPlaylist(videoId, playlistName) {
         try {
-            console.log(`🎯 Getting sub-playlist: ${playlistName} for video ${videoId}`);
+            console.log(`🎯 Getting MOBILE sub-playlist: ${playlistName} for video ${videoId}`);
 
-            // Luôn sử dụng fetch + text() để lấy nội dung sub-playlist
-            const response = await fetch(`${this.baseURL}/playlist/web/${videoId}/${playlistName}`);
+            const response = await fetch(`${this.baseURL}/playlist/mobile/${videoId}/${playlistName}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/x-mpegURL, text/plain, */*',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+
             if (!response.ok) {
-                throw new Error(`Failed to fetch sub-playlist: ${response.status} ${response.statusText}`);
+                throw new Error(`Failed to fetch mobile sub-playlist: ${response.status} ${response.statusText}`);
             }
 
-            // Luôn đọc response dưới dạng text
             const content = await response.text();
-            console.log(`📄 Sub-playlist ${playlistName} content:`, content);
+            console.log(`📄 Mobile sub-playlist ${playlistName} content preview:`, content.substring(0, 300));
             return content;
         } catch (error) {
-            console.error(`Error fetching sub-playlist ${playlistName}:`, error);
+            console.error(`❌ Error fetching mobile sub-playlist ${playlistName}:`, error);
             throw error;
         }
     }
 
     /**
-     * 3. Lấy VIDEO SEGMENT - File .ts chứa video data
-     * URL: http://192.168.1.73:8082/api/videofilm/segment/web/2/output_0_00000.ts
+     * 3. Lấy VIDEO SEGMENT cho Mobile - File .ts chứa video data
+     * URL: http://192.168.100.193:8082/api/videofilm/segment/mobile/2/output_0_00000.ts
      */
     async getVideoSegment(videoId, segmentName) {
         try {
-            const response = await fetch(`${this.baseURL}/segment/web/${videoId}/${segmentName}`);
+            const response = await fetch(`${this.baseURL}/segment/mobile/${videoId}/${segmentName}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'video/MP2T, */*'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch segment: ${response.status}`);
+            }
+
             return await response.arrayBuffer(); // Trả về binary data
         } catch (error) {
-            console.error(`Error fetching segment ${segmentName}:`, error);
+            console.error(`❌ Error fetching mobile segment ${segmentName}:`, error);
             throw error;
         }
     }
 
-    // === URL GENERATORS ===
+    // === MOBILE URL GENERATORS ===
     getMasterPlaylistUrl(videoId) {
-        return `${this.baseURL}/stream/web/${videoId}`;
+        return `${this.baseURL}/stream/mobile/${videoId}`;
     }
 
     getSubPlaylistUrl(videoId, playlistName) {
-        return `${this.baseURL}/playlist/web/${videoId}/${playlistName}`;
+        return `${this.baseURL}/playlist/mobile/${videoId}/${playlistName}`;
     }
 
     getSegmentUrl(videoId, segmentName) {
-        return `${this.baseURL}/segment/web/${videoId}/${segmentName}`;
+        return `${this.baseURL}/segment/mobile/${videoId}/${segmentName}`;
     }
 
-    // === HLS PARSING METHODS ===
+    // === HLS PARSING METHODS (Unchanged) ===
 
     /**
      * Parse MASTER PLAYLIST để lấy danh sách quality levels
-     * Input: Master playlist content
-     * Output: Array of quality objects
      */
     parseMasterPlaylist(masterContent) {
-        // Nếu masterContent không phải là string, ném lỗi
         if (typeof masterContent !== 'string') {
-            console.error('Lỗi: masterContent không phải là string:', typeof masterContent);
+            console.error('❌ Lỗi: masterContent không phải là string:', typeof masterContent);
             throw new Error('Nội dung master playlist không hợp lệ (không phải string)');
         }
 
         const lines = masterContent.split('\n');
         const qualities = [];
 
-        console.log('🔍 Parsing master playlist...');
+        console.log('🔍 Parsing mobile master playlist...');
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
 
             // Tìm dòng EXT-X-STREAM-INF (chứa thông tin quality)
             if (line.startsWith('#EXT-X-STREAM-INF:')) {
-                console.log(`Found quality line: ${line}`);
+                console.log(`📊 Found quality line: ${line}`);
 
                 // Parse attributes từ dòng EXT-X-STREAM-INF
                 const attributes = this.parseStreamInfAttributes(line);
 
-                // Dòng tiếp theo chứa playlist name
+                // Dòng tiếp theo chứa playlist URL hoặc name
                 if (i + 1 < lines.length) {
                     const nextLine = lines[i + 1].trim();
                     if (nextLine && !nextLine.startsWith('#')) {
                         // Extract playlist name từ URL
-                        const playlistName = nextLine.includes('/')
-                            ? nextLine.substring(nextLine.lastIndexOf('/') + 1)
-                            : nextLine;
+                        let playlistName = nextLine;
+                        if (nextLine.includes('/')) {
+                            playlistName = nextLine.substring(nextLine.lastIndexOf('/') + 1);
+                        }
 
                         const quality = {
                             playlistName: playlistName, // VD: "index_0.m3u8"
-                            fullUrl: nextLine, // URL đầy đủ
+                            fullUrl: nextLine, // URL đầy đủ hoặc relative path
                             bandwidth: parseInt(attributes.BANDWIDTH || 0),
                             resolution: attributes.RESOLUTION || null,
                             codecs: attributes.CODECS ? attributes.CODECS.replace(/"/g, '') : null,
@@ -189,7 +208,7 @@ class VideoApiService {
                         };
 
                         qualities.push(quality);
-                        console.log(`✅ Found quality: ${quality.label} (${quality.playlistName})`);
+                        console.log(`✅ Found mobile quality: ${quality.label} (${quality.playlistName})`);
                     }
                 }
             }
@@ -198,19 +217,16 @@ class VideoApiService {
         // Sắp xếp theo bandwidth (chất lượng cao nhất trước)
         qualities.sort((a, b) => b.bandwidth - a.bandwidth);
 
-        console.log(`📊 Found ${qualities.length} quality levels:`, qualities);
+        console.log(`📊 Found ${qualities.length} mobile quality levels:`, qualities);
         return qualities;
     }
 
     /**
      * Parse SUB-PLAYLIST để lấy danh sách segments
-     * Input: Sub-playlist content
-     * Output: Array of segment objects
      */
     parseSubPlaylist(subContent) {
-        // Nếu subContent không phải là string, ném lỗi
         if (typeof subContent !== 'string') {
-            console.error('Lỗi: subContent không phải là string:', typeof subContent);
+            console.error('❌ Lỗi: subContent không phải là string:', typeof subContent);
             throw new Error('Nội dung sub-playlist không hợp lệ (không phải string)');
         }
 
@@ -218,7 +234,7 @@ class VideoApiService {
         const segments = [];
         let duration = 0;
 
-        console.log('🔍 Parsing sub-playlist...');
+        console.log('🔍 Parsing mobile sub-playlist...');
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -235,9 +251,10 @@ class VideoApiService {
                     const nextLine = lines[i + 1].trim();
                     if (nextLine && !nextLine.startsWith('#')) {
                         // Extract segment name từ URL
-                        const segmentName = nextLine.includes('/')
-                            ? nextLine.substring(nextLine.lastIndexOf('/') + 1)
-                            : nextLine;
+                        let segmentName = nextLine;
+                        if (nextLine.includes('/')) {
+                            segmentName = nextLine.substring(nextLine.lastIndexOf('/') + 1);
+                        }
 
                         const segment = {
                             segmentName: segmentName, // VD: "output_0_00000.ts"
@@ -252,7 +269,7 @@ class VideoApiService {
             }
         }
 
-        console.log(`📹 Found ${segments.length} segments in sub-playlist`);
+        console.log(`📹 Found ${segments.length} segments in mobile sub-playlist`);
         return segments;
     }
 
@@ -310,11 +327,11 @@ class VideoApiService {
     // === HIGH-LEVEL METHODS ===
 
     /**
-     * Lấy tất cả quality levels cho video
+     * Lấy tất cả quality levels cho video (Mobile)
      */
     async getAvailableQualities(videoId) {
         try {
-            console.log(`🎯 Getting available qualities for video ${videoId}`);
+            console.log(`🎯 Getting available MOBILE qualities for video ${videoId}`);
 
             // 1. Lấy master playlist
             const masterContent = await this.getMasterPlaylist(videoId);
@@ -322,25 +339,26 @@ class VideoApiService {
             // 2. Parse để lấy quality levels
             const qualities = this.parseMasterPlaylist(masterContent);
 
-            // 3. Thêm URL đầy đủ cho mỗi quality
+            // 3. Thêm URL đầy đủ cho mỗi quality (mobile URLs)
             const qualitiesWithUrls = qualities.map(quality => ({
                 ...quality,
                 url: this.getSubPlaylistUrl(videoId, quality.playlistName)
             }));
 
+            console.log(`✅ Found ${qualitiesWithUrls.length} mobile qualities:`, qualitiesWithUrls);
             return qualitiesWithUrls;
         } catch (error) {
-            console.error('Error getting available qualities:', error);
+            console.error('❌ Error getting available mobile qualities:', error);
             throw error;
         }
     }
 
     /**
-     * Lấy segments cho quality cụ thể
+     * Lấy segments cho quality cụ thể (Mobile)
      */
     async getSegmentsForQuality(videoId, playlistName) {
         try {
-            console.log(`🎬 Getting segments for quality: ${playlistName}`);
+            console.log(`🎬 Getting mobile segments for quality: ${playlistName}`);
 
             // 1. Lấy sub-playlist
             const subContent = await this.getSubPlaylist(videoId, playlistName);
@@ -348,42 +366,43 @@ class VideoApiService {
             // 2. Parse để lấy segments
             const segments = this.parseSubPlaylist(subContent);
 
-            // 3. Thêm URL đầy đủ cho mỗi segment
+            // 3. Thêm URL đầy đủ cho mỗi segment (mobile URLs)
             const segmentsWithUrls = segments.map(segment => ({
                 ...segment,
                 url: this.getSegmentUrl(videoId, segment.segmentName)
             }));
 
+            console.log(`✅ Found ${segmentsWithUrls.length} mobile segments for ${playlistName}`);
             return segmentsWithUrls;
         } catch (error) {
-            console.error(`Error getting segments for quality ${playlistName}:`, error);
+            console.error(`❌ Error getting mobile segments for quality ${playlistName}:`, error);
             throw error;
         }
     }
 
     /**
-     * Test toàn bộ HLS structure cho video
+     * Test toàn bộ HLS structure cho video (Mobile)
      */
     async testHLSStructure(videoId) {
         try {
-            console.log(`🔧 Testing HLS structure for video ${videoId}`);
+            console.log(`🔧 Testing MOBILE HLS structure for video ${videoId}`);
 
             // 1. Test master playlist
-            console.log('1. Testing master playlist...');
+            console.log('1. Testing mobile master playlist...');
             const masterUrl = this.getMasterPlaylistUrl(videoId);
-            console.log(`Master URL: ${masterUrl}`);
+            console.log(`Mobile Master URL: ${masterUrl}`);
 
             const qualities = await this.getAvailableQualities(videoId);
-            console.log(`✅ Found ${qualities.length} qualities`);
+            console.log(`✅ Found ${qualities.length} mobile qualities`);
 
             // 2. Test sub-playlists
-            console.log('2. Testing sub-playlists...');
+            console.log('2. Testing mobile sub-playlists...');
             const subPlaylistTests = [];
 
-            for (const quality of qualities) {
+            for (const quality of qualities.slice(0, 2)) { // Test only first 2 qualities to save time
                 try {
                     const segments = await this.getSegmentsForQuality(videoId, quality.playlistName);
-                    console.log(`✅ Quality ${quality.label}: ${segments.length} segments`);
+                    console.log(`✅ Mobile Quality ${quality.label}: ${segments.length} segments`);
 
                     subPlaylistTests.push({
                         quality: quality.label,
@@ -392,7 +411,7 @@ class VideoApiService {
                         isValid: segments.length > 0
                     });
                 } catch (e) {
-                    console.error(`❌ Quality ${quality.label} failed:`, e.message);
+                    console.error(`❌ Mobile Quality ${quality.label} failed:`, e.message);
                     subPlaylistTests.push({
                         quality: quality.label,
                         playlistName: quality.playlistName,
@@ -403,8 +422,8 @@ class VideoApiService {
                 }
             }
 
-            // 3. Test sample segments
-            console.log('3. Testing sample segments...');
+            // 3. Test sample segment
+            console.log('3. Testing mobile sample segment...');
             if (qualities.length > 0) {
                 const firstQuality = qualities[0];
                 const segments = await this.getSegmentsForQuality(videoId, firstQuality.playlistName);
@@ -412,17 +431,20 @@ class VideoApiService {
                 if (segments.length > 0) {
                     const firstSegment = segments[0];
                     const segmentUrl = this.getSegmentUrl(videoId, firstSegment.segmentName);
-                    console.log(`Testing first segment: ${segmentUrl}`);
+                    console.log(`Testing first mobile segment: ${segmentUrl}`);
 
                     try {
-                        const response = await fetch(segmentUrl, { method: 'HEAD' });
+                        const response = await fetch(segmentUrl, {
+                            method: 'HEAD',
+                            timeout: 10000
+                        });
                         if (response.ok) {
-                            console.log(`✅ Sample segment accessible`);
+                            console.log(`✅ Mobile sample segment accessible`);
                         } else {
-                            console.error(`❌ Sample segment returned: ${response.status}`);
+                            console.error(`❌ Mobile sample segment returned: ${response.status}`);
                         }
                     } catch (e) {
-                        console.error(`❌ Sample segment test failed:`, e.message);
+                        console.error(`❌ Mobile sample segment test failed:`, e.message);
                     }
                 }
             }
@@ -430,15 +452,44 @@ class VideoApiService {
             return {
                 valid: subPlaylistTests.some(test => test.isValid),
                 qualities: qualities,
-                subPlaylistTests: subPlaylistTests
+                subPlaylistTests: subPlaylistTests,
+                masterUrl: masterUrl,
+                platform: 'mobile'
             };
 
         } catch (error) {
-            console.error('❌ HLS structure test failed:', error);
+            console.error('❌ Mobile HLS structure test failed:', error);
             return {
                 valid: false,
-                error: error.message
+                error: error.message,
+                platform: 'mobile'
             };
+        }
+    }
+
+    /**
+     * Kiểm tra video status
+     */
+    async getVideoStatus(videoId) {
+        try {
+            const response = await fetch(`${this.baseURL}/status/${videoId}`);
+            return await this.handleResponse(response);
+        } catch (error) {
+            console.error('Error getting video status:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Debug endpoint - Lấy original M3U8 content
+     */
+    async getDebugM3U8(videoId) {
+        try {
+            const response = await fetch(`${this.baseURL}/debug/m3u8/${videoId}`);
+            return await this.handleResponse(response);
+        } catch (error) {
+            console.error('Error getting debug M3U8:', error);
+            throw error;
         }
     }
 
@@ -482,6 +533,59 @@ class VideoApiService {
             'FAILED': 'bg-red-600'
         };
         return colorMap[status] || 'bg-gray-600';
+    }
+
+    /**
+     * Test connection to server
+     */
+    async testConnection() {
+        try {
+            console.log('🔗 Testing connection to mobile streaming server...');
+            const response = await fetch(`${this.baseURL}/recent`, {
+                method: 'GET',
+                timeout: 5000
+            });
+
+            if (response.ok) {
+                console.log('✅ Connection to mobile streaming server successful');
+                return true;
+            } else {
+                console.error('❌ Connection failed:', response.status);
+                return false;
+            }
+        } catch (error) {
+            console.error('❌ Connection test failed:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get mobile-optimized streaming configuration
+     */
+    getMobileStreamingConfig() {
+        return {
+            platform: 'mobile',
+            baseURL: this.baseURL,
+            endpoints: {
+                masterPlaylist: '/stream/mobile/{videoId}',
+                subPlaylist: '/playlist/mobile/{videoId}/{playlistName}',
+                segment: '/segment/mobile/{videoId}/{segmentName}',
+                status: '/status/{videoId}',
+                debug: '/debug/m3u8/{videoId}'
+            },
+            headers: {
+                'Accept': 'application/x-mpegURL, text/plain, */*',
+                'Cache-Control': 'no-cache',
+                'User-Agent': 'ReactNative/ExpoVideo'
+            },
+            supportedFormats: ['m3u8', 'ts'],
+            bufferSettings: {
+                minBufferMs: 15000,
+                maxBufferMs: 50000,
+                bufferForPlaybackMs: 2500,
+                bufferForPlaybackAfterRebufferMs: 5000
+            }
+        };
     }
 }
 

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "myMovieAppp",
-    "slug": "myMovieAppp",
+    "name": "mymovieappp",
+    "slug": "mymovieappp",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "scheme": "mymovieapp",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -31,7 +31,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-av"
     ]
   }
 }

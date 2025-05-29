@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,19 +10,92 @@ import {
   ImageBackground,
   Dimensions,
   StatusBar,
-  Animated
+  Animated,
+  Alert
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import favoriteService from '../services/FavoriteService';
+import ReviewService from '../services/ReviewService';
+import ReviewCard from '../components/review/ReviewCard';
 
 const { width, height } = Dimensions.get('window');
 
 const MovieScreen = ({ route, navigation }) => {
   const movie = route.params?.movie?.data || route.params?.movie;
   const [liked, setLiked] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [isLoadingFavorite, setIsLoadingFavorite] = useState(false);
+
+  // Review states
+  const [reviews, setReviews] = useState([]);
+  const [reviewStats, setReviewStats] = useState(null);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+  const [userReview, setUserReview] = useState(null);
+  const [canUserReview, setCanUserReview] = useState(true);
 
   console.log("📦 Dữ liệu phim:", movie);
+
+  useEffect(() => {
+    if (movie?.id) {
+      checkFavoriteStatus();
+      loadReviews();
+      loadReviewStats();
+      checkUserReviewStatus();
+    }
+  }, [movie?.id]);
+
+  const checkFavoriteStatus = async () => {
+    try {
+      setIsLoadingFavorite(true);
+      const response = await favoriteService.checkIsFavorite(movie.id);
+      setIsFavorite(response.isFavorite);
+      console.log('✅ Favorite status checked:', response.isFavorite);
+    } catch (error) {
+      console.error('❌ Error checking favorite status:', error);
+    } finally {
+      setIsLoadingFavorite(false);
+    }
+  };
+
+  const handleToggleFavorites = async () => {
+    if (isLoadingFavorite) return;
+
+    try {
+      setIsLoadingFavorite(true);
+      
+      const newFavoriteState = !isFavorite;
+      setIsFavorite(newFavoriteState);
+
+      const response = await favoriteService.toggleFavorite(movie.id);
+      
+      setIsFavorite(response.isFavorite);
+      
+      const message = response.isFavorite 
+        ? `✅ Đã thêm "${movie.title}" vào danh sách yêu thích`
+        : `❌ Đã xóa "${movie.title}" khỏi danh sách yêu thích`;
+        
+      Alert.alert(
+        response.isFavorite ? '💖 Thêm vào danh sách' : '🗑️ Xóa khỏi danh sách', 
+        message,
+        [{ text: 'OK' }]
+      );
+      
+      console.log('✅ Favorite toggled successfully:', response);
+    } catch (error) {
+      console.error('❌ Error toggling favorite:', error);
+      
+      setIsFavorite(!isFavorite);
+      
+      Alert.alert(
+        '❌ Lỗi',
+        'Không thể cập nhật danh sách yêu thích. Vui lòng thử lại.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoadingFavorite(false);
+    }
+  };
 
   if (!movie) {
     return (
@@ -41,7 +114,31 @@ const MovieScreen = ({ route, navigation }) => {
 
   const handleWatchMovie = () => {
     console.log("🎬 Bắt đầu xem phim:", movie.title);
-    navigation.navigate('VideoPlayerScreen', { movie });
+
+    const videoId = movie.id || movie.videoId || movie.movieId;
+
+    if (!videoId) {
+      Alert.alert(
+          '⚠️ Lỗi',
+          'Không tìm thấy ID video để phát. Vui lòng thử lại.',
+          [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    console.log("🆔 Video ID:", videoId);
+    console.log("📦 Movie data:", {
+      id: movie.id,
+      title: movie.title,
+      videoId: videoId
+    });
+
+    navigation.navigate('VideoPlayerScreen', {
+      videoId: videoId,
+      movie: movie,
+      movieTitle: movie.title,
+      movieData: movie
+    });
   };
 
   const handleLike = () => {
@@ -49,9 +146,77 @@ const MovieScreen = ({ route, navigation }) => {
     // TODO: Call API to update like status
   };
 
-  const handleBookmark = () => {
-    setBookmarked(!bookmarked);
-    // TODO: Call API to update bookmark status
+  // ===================== REVIEW FUNCTIONS =====================
+
+  const loadReviews = async () => {
+    try {
+      setLoadingReviews(true);
+      const response = await ReviewService.getMovieReviews(movie.id, 0, 5);
+      const formattedReviews = await Promise.all(
+        (response.content || []).map(review => 
+          ReviewService.formatReviewResponse(review)
+        )
+      );
+      setReviews(formattedReviews);
+    } catch (error) {
+      console.error('Error loading reviews:', error);
+    } finally {
+      setLoadingReviews(false);
+    }
+  };
+
+  const loadReviewStats = async () => {
+    try {
+      const stats = await ReviewService.getMovieReviewStats(movie.id);
+      setReviewStats(stats);
+    } catch (error) {
+      console.error('Error loading review stats:', error);
+    }
+  };
+
+  const checkUserReviewStatus = async () => {
+    try {
+      const canReview = await ReviewService.canUserReviewMovie(null, movie.id);
+      setCanUserReview(canReview);
+      
+      if (!canReview) {
+        // User already has a review, load it
+        const userReviewData = await ReviewService.getUserReviewForMovie(null, movie.id);
+        if (userReviewData) {
+          setUserReview(await ReviewService.formatReviewResponse(userReviewData));
+        }
+      }
+    } catch (error) {
+      console.error('Error checking user review status:', error);
+    }
+  };
+
+  const handleWriteReview = () => {
+    navigation.navigate('WriteReviewScreen', {
+      movie: movie,
+      existingReview: userReview
+    });
+  };
+
+  const handleDeleteReview = async (reviewId) => {
+    try {
+      await ReviewService.deleteReview(reviewId);
+      setUserReview(null);
+      setCanUserReview(true);
+      loadReviews();
+      loadReviewStats();
+      Alert.alert('Thành công', 'Đã xóa đánh giá của bạn');
+    } catch (error) {
+      console.error('Error deleting review:', error);
+      Alert.alert('Lỗi', 'Không thể xóa đánh giá');
+    }
+  };
+
+  const handleEditReview = (review) => {
+    navigation.navigate('WriteReviewScreen', {
+      movie: movie,
+      existingReview: review
+    });
   };
 
   const imageUri = movie.imgMovie
@@ -141,15 +306,26 @@ const MovieScreen = ({ route, navigation }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                  style={[styles.actionButton, bookmarked && styles.actionButtonActive]}
-                  onPress={handleBookmark}
+                  style={[
+                    styles.actionButton, 
+                    styles.myListButton,
+                    isFavorite && styles.myListButtonActive,
+                    isLoadingFavorite && styles.actionButtonLoading
+                  ]}
+                  onPress={handleToggleFavorites}
+                  disabled={isLoadingFavorite}
               >
                 <Ionicons
-                    name={bookmarked ? "bookmark" : "bookmark-outline"}
+                    name={isFavorite ? "checkmark" : "add"}
                     size={24}
-                    color={bookmarked ? "#FFD700" : "#fff"}
+                    color={isFavorite ? "#00D084" : "#fff"}
                 />
-                <Text style={styles.actionButtonText}>Lưu</Text>
+                <Text style={[
+                  styles.actionButtonText,
+                  isFavorite && styles.myListButtonText
+                ]}>
+                  {isLoadingFavorite ? "..." : (isFavorite ? "Trong DS" : "Danh sách")}
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.actionButton}>
@@ -266,6 +442,102 @@ const MovieScreen = ({ route, navigation }) => {
                   <Text style={styles.statLabel}>Lượt xem</Text>
                 </View>
               </View>
+            </View>
+
+            {/* Reviews Section */}
+            <View style={styles.section}>
+              <View style={styles.reviewHeader}>
+                <Text style={styles.sectionTitle}>⭐ Đánh giá & Nhận xét</Text>
+                
+                {/* Review Stats */}
+                {reviewStats && (
+                  <View style={styles.reviewStatsContainer}>
+                    <View style={styles.avgRatingContainer}>
+                      <Text style={styles.avgRating}>
+                        {reviewStats.averageRating ? reviewStats.averageRating.toFixed(1) : '0.0'}
+                      </Text>
+                      <View style={styles.avgRatingStars}>
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <Icon
+                            key={star}
+                            name={star <= Math.round(reviewStats.averageRating || 0) ? "star" : "star-border"}
+                            size={16}
+                            color="#FFD700"
+                          />
+                        ))}
+                      </View>
+                      <Text style={styles.totalReviews}>
+                        ({reviewStats.totalReviews || 0} đánh giá)
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Write Review Button */}
+              <TouchableOpacity
+                style={styles.writeReviewButton}
+                onPress={handleWriteReview}
+              >
+                <Icon 
+                  name={userReview ? "edit" : "rate-review"} 
+                  size={20} 
+                  color="#E50914" 
+                />
+                <Text style={styles.writeReviewText}>
+                  {userReview ? 'Chỉnh sửa đánh giá của bạn' : 'Viết đánh giá'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* User's Review */}
+              {userReview && (
+                <View style={styles.userReviewSection}>
+                  <Text style={styles.userReviewTitle}>Đánh giá của bạn:</Text>
+                  <ReviewCard
+                    review={userReview}
+                    isCurrentUser={true}
+                    onEdit={handleEditReview}
+                    onDelete={handleDeleteReview}
+                    style={styles.userReviewCard}
+                  />
+                </View>
+              )}
+
+              {/* Recent Reviews */}
+              {reviews.length > 0 ? (
+                <View style={styles.reviewsList}>
+                  <Text style={styles.reviewsListTitle}>Đánh giá gần đây:</Text>
+                  {reviews.map((review, index) => (
+                    <ReviewCard
+                      key={review.id}
+                      review={review}
+                      isCurrentUser={false}
+                      style={index === 0 ? { marginTop: 0 } : {}}
+                    />
+                  ))}
+                  
+                  {/* View All Reviews Button */}
+                  <TouchableOpacity 
+                    style={styles.viewAllReviewsButton}
+                    onPress={() => navigation.navigate('MovieReviewsScreen', { movie })}
+                  >
+                    <Text style={styles.viewAllReviewsText}>
+                      Xem tất cả đánh giá
+                    </Text>
+                    <Icon name="arrow-forward" size={16} color="#E50914" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.noReviewsContainer}>
+                  <Icon name="rate-review" size={40} color="#666" />
+                  <Text style={styles.noReviewsText}>
+                    Chưa có đánh giá nào cho bộ phim này
+                  </Text>
+                  <Text style={styles.noReviewsSubtext}>
+                    Hãy là người đầu tiên chia sẻ cảm nhận của bạn!
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Related Movies Section Placeholder */}
@@ -558,6 +830,112 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
+  },
+  myListButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  myListButtonActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+  },
+  myListButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  actionButtonLoading: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  reviewStatsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avgRatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avgRating: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginRight: 10,
+  },
+  avgRatingStars: {
+    flexDirection: 'row',
+  },
+  totalReviews: {
+    color: '#ccc',
+    fontSize: 14,
+  },
+  writeReviewButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  writeReviewText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  userReviewSection: {
+    marginBottom: 20,
+  },
+  userReviewTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+  },
+  userReviewCard: {
+    backgroundColor: '#1a1a1a',
+    padding: 10,
+    borderRadius: 8,
+  },
+  reviewsList: {
+    marginBottom: 20,
+  },
+  reviewsListTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 10,
+  },
+  viewAllReviewsButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 10,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewAllReviewsText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  noReviewsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noReviewsText: {
+    color: '#fff',
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  noReviewsSubtext: {
+    color: '#ccc',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 

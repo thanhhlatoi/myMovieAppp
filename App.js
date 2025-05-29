@@ -5,8 +5,6 @@ LogBox.ignoreLogs([
   '[expo-av]: Video component from `expo-av` is deprecated',
 ]);
 
-
-
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createStackNavigator } from "@react-navigation/stack";
@@ -15,11 +13,14 @@ import MovieScreen from "./src/screens/MovieScreen";
 import VideoPlayerScreen from "./src/screens/VideoPlayerScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SearchScreen from "./src/screens/SearchScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
+import FavoritesScreen from "./src/screens/FavoritesScreen";
+import WriteReviewScreen from "./src/screens/WriteReviewScreen";
+import MovieReviewsScreen from "./src/screens/MovieReviewsScreen";
+import EditProfileScreen from "./src/screens/EditProfileScreen";
+import ChangePasswordScreen from "./src/screens/ChangePasswordScreen";
 import { useFonts } from "expo-font";
 import { View, ActivityIndicator } from "react-native";
-import WatchScreen from "./src/screens/WatchScreen";
-import ProfileScreen from "./src/screens/ProfileScreen";
-import FavoritesScreen from "./src/screens/FavoritesScreen"; // thay thế AppLoading vì expo-app-loading bị deprecated
 
 const Stack = createStackNavigator();
 
@@ -62,9 +63,12 @@ export default function App() {
           options={{ headerShown: false }}
         />
         <Stack.Screen name="VideoPlayerScreen" component={VideoPlayerScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="VideoPlayer" component={WatchScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Favorites" component={FavoritesScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="WriteReviewScreen" component={WriteReviewScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="MovieReviewsScreen" component={MovieReviewsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="ChangePasswordScreen" component={ChangePasswordScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
