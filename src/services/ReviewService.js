@@ -1,6 +1,6 @@
 // 📄 src/services/ReviewService.js - Comprehensive Review API Service
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_CONFIG, ENDPOINTS, buildUrl, DEBUG_CONFIG } from '../config/apiConfig';
+import { API_CONFIG, ENDPOINTS, buildUrl, DEBUG_CONFIG, FEATURE_FLAGS } from '../config/apiConfig';
 
 class ReviewService {
     constructor() {
@@ -60,11 +60,40 @@ class ReviewService {
 
         try {
             this.log(`Making request to: ${url}`, requestOptions);
+            
+            // Add timeout to prevent hanging requests (reduced for development)
+            const timeoutId = setTimeout(() => {
+                throw new Error('Request timeout - server took too long to respond');
+            }, 8000); // 8 second timeout for development
+            
             const response = await fetch(url, requestOptions);
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.message || errorData.error || errorMessage;
+                } catch (parseError) {
+                    // If we can't parse error response, use default message
+                    console.warn('Could not parse error response:', parseError);
+                }
+                
+                // ✨ ENHANCED: More specific error messages
+                if (response.status === 404) {
+                    errorMessage = 'Endpoint not found - this feature may not be implemented yet';
+                } else if (response.status === 401) {
+                    errorMessage = 'Authentication required - please login again';
+                } else if (response.status === 403) {
+                    errorMessage = 'Access denied - insufficient permissions';
+                } else if (response.status === 500) {
+                    errorMessage = 'Server error - please try again later';
+                } else if (response.status >= 500) {
+                    errorMessage = 'Server is experiencing issues - please try again later';
+                }
+                
+                throw new Error(errorMessage);
             }
 
             const contentType = response.headers.get('content-type');
@@ -74,8 +103,17 @@ class ReviewService {
 
             return response;
         } catch (error) {
-            console.error('API Request Error:', error);
-            throw error;
+            // ✨ ENHANCED: Better error categorization
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                console.error('Network Error - Check internet connection:', error);
+                throw new Error('Network error - please check your internet connection');
+            } else if (error.message.includes('timeout')) {
+                console.error('Request Timeout:', error);
+                throw new Error('Request timeout - server is slow to respond');
+            } else {
+                console.error('API Request Error:', error);
+                throw error;
+            }
         }
     }
 
@@ -357,25 +395,105 @@ class ReviewService {
 
     // ===================== STATISTICS OPERATIONS =====================
 
-    // Get movie review statistics
+    // Get movie review statistics (with fallback)
     async getMovieReviewStats(movieId) {
+        // ✨ CHECK FEATURE FLAG: Skip API call if reviews disabled
+        if (!FEATURE_FLAGS.ENABLE_REVIEW_STATS) {
+            console.log('📝 Review stats disabled via feature flag, returning default stats');
+            return {
+                totalReviews: 0,
+                averageRating: 0,
+                ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+                lastUpdated: new Date().toISOString()
+            };
+        }
+
         try {
             const url = `${this.reviewsEndpoint}/stats/movie/${movieId}`;
-            return await this.makeAuthenticatedRequest(url);
+            const result = await this.makeAuthenticatedRequest(url);
+            
+            // Return result if successful
+            return result;
         } catch (error) {
             console.error('Error getting movie review stats:', error);
-            throw error;
+            
+            // ✨ FALLBACK: Return default stats structure if API fails
+            console.log('🔄 Falling back to default review stats for movie:', movieId);
+            
+            try {
+                // Try to get basic movie reviews to calculate simple stats
+                const reviewsResponse = await this.getMovieReviews(movieId, 0, 100);
+                const reviews = reviewsResponse?.data?.content || [];
+                
+                if (reviews.length > 0) {
+                    const totalReviews = reviews.length;
+                    const totalRating = reviews.reduce((sum, review) => sum + (review.rating || 0), 0);
+                    const averageRating = totalRating / totalReviews;
+                    
+                    return {
+                        totalReviews,
+                        averageRating: Math.round(averageRating * 10) / 10, // Round to 1 decimal
+                        ratingDistribution: this.calculateRatingDistribution(reviews),
+                        lastUpdated: new Date().toISOString()
+                    };
+                }
+            } catch (fallbackError) {
+                console.error('Fallback stats calculation also failed:', fallbackError);
+            }
+            
+            // ✨ ULTIMATE FALLBACK: Return empty stats
+            return {
+                totalReviews: 0,
+                averageRating: 0,
+                ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+                lastUpdated: new Date().toISOString()
+            };
         }
     }
+    
+    // Helper method to calculate rating distribution from reviews
+    calculateRatingDistribution(reviews) {
+        const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        
+        reviews.forEach(review => {
+            const rating = Math.floor(review.rating || 0);
+            if (rating >= 1 && rating <= 5) {
+                distribution[rating]++;
+            }
+        });
+        
+        return distribution;
+    }
 
-    // Get rating distribution
+    // Get rating distribution (with fallback)
     async getRatingDistribution(movieId) {
+        // ✨ CHECK FEATURE FLAG: Skip API call if reviews disabled
+        if (!FEATURE_FLAGS.ENABLE_REVIEW_STATS) {
+            console.log('📊 Rating distribution disabled via feature flag, returning empty distribution');
+            return { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        }
+
         try {
             const url = `${this.reviewsEndpoint}/rating-distribution/${movieId}`;
-            return await this.makeAuthenticatedRequest(url);
+            const result = await this.makeAuthenticatedRequest(url);
+            return result;
         } catch (error) {
             console.error('Error getting rating distribution:', error);
-            throw error;
+            
+            // ✨ FALLBACK: Calculate from reviews
+            console.log('🔄 Falling back to calculated rating distribution for movie:', movieId);
+            
+            try {
+                const reviewsResponse = await this.getMovieReviews(movieId, 0, 100);
+                const reviews = reviewsResponse?.data?.content || [];
+                
+                return this.calculateRatingDistribution(reviews);
+            } catch (fallbackError) {
+                console.error('Fallback rating distribution calculation failed:', fallbackError);
+                
+                // Return empty distribution
+                return { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+            }
         }
     }
 
@@ -471,3 +589,4 @@ class ReviewService {
 
 // Export singleton instance
 export default new ReviewService();
+ 

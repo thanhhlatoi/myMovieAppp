@@ -1,8 +1,8 @@
 import React from "react";
 import { View, StyleSheet, Text, Image } from "react-native";
 import { getPoster } from "../services/MovieService";
-import COLORS from "../constants/Colors";
-import FONTS from "../constants/Fonts";
+import { COLORS } from "../constants/Colors";
+import { FONTS } from "../constants/Fonts";
 import IMAGES from "../constants/Images";
 
 const CastCard = ({ originalName, image, characterName }) => {

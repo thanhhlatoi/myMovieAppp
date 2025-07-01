@@ -72,10 +72,10 @@ const HeroSection = ({ movie, onPress, onAddToWatchlist, isAutoPlaying = false }
             
             {/* ✨ NETFLIX FEATURE: Animated background with subtle zoom */}
             <Animated.View style={[styles.backgroundContainer, { transform: [{ scale: scaleAnim }] }]}>
-                <ImageBackground
-                    source={{ uri: imageUri }}
-                    style={styles.background}
-                    resizeMode="cover"
+            <ImageBackground
+                source={{ uri: imageUri }}
+                style={styles.background}
+                resizeMode="cover"
                     onLoad={() => setIsVideoLoaded(true)}
                 >
                     {/* ✨ NETFLIX FEATURE: Multiple gradient layers for depth */}
@@ -101,25 +101,25 @@ const HeroSection = ({ movie, onPress, onAddToWatchlist, isAutoPlaying = false }
                             </View>
 
                             {/* Enhanced title with shadows */}
-                            <Text style={styles.title}>{displayData.title}</Text>
+                        <Text style={styles.title}>{displayData.title}</Text>
                             
                             {/* ✨ NETFLIX FEATURE: Movie metadata row */}
                             <MovieMetadata movie={movie} displayData={displayData} />
                             
                             {/* Enhanced description */}
-                            <Text style={styles.description} numberOfLines={3}>
-                                {displayData.description}
-                            </Text>
+                        <Text style={styles.description} numberOfLines={3}>
+                            {displayData.description}
+                        </Text>
 
                             {/* ✨ NETFLIX FEATURE: Enhanced stats */}
-                            <MovieStats movie={movie} displayData={displayData} />
+                        <MovieStats movie={movie} displayData={displayData} />
                             
                             {/* ✨ NETFLIX FEATURE: Premium action buttons */}
                             <NetflixHeroActions
-                                onPlay={() => onPress(movie.id)}
-                                onAddToWatchlist={onAddToWatchlist}
+                            onPlay={() => onPress(movie.id)}
+                            onAddToWatchlist={onAddToWatchlist}
                                 onMoreInfo={() => console.log('More info')}
-                            />
+                        />
                         </Animated.View>
                     </LinearGradient>
                 </ImageBackground>
@@ -190,7 +190,7 @@ const NetflixHeroActions = ({ onPlay, onAddToWatchlist, onMoreInfo }) => (
             <TouchableOpacity style={styles.secondaryButton} onPress={onMoreInfo}>
                 <Icon name="info-outline" size={20} color="#fff" />
                 <Text style={styles.secondaryButtonText}>Thông tin</Text>
-            </TouchableOpacity>
+        </TouchableOpacity>
         </View>
     </View>
 );

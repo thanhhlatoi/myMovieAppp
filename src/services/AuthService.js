@@ -40,6 +40,11 @@ class AuthService {
                 bodyLength: requestOptions.body ? requestOptions.body.length : 0
             });
             
+            // Log actual request body for debugging
+            if (requestOptions.body) {
+                this.log('Request body:', requestOptions.body);
+            }
+            
             const response = await fetch(url, requestOptions);
             
             this.log('Response status:', response.status);
@@ -49,7 +54,9 @@ class AuthService {
                 let errorData;
                 try {
                     errorData = await response.json();
+                    this.log('Error response JSON:', errorData);
                 } catch (parseError) {
+                    this.log('Failed to parse error response as JSON:', parseError);
                     errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
                 }
                 
@@ -259,12 +266,67 @@ class AuthService {
                 body: JSON.stringify(userData)
             });
 
+            this.log('Registration response:', response);
+
+            // Handle the response format from server: {"registration": {...}}
+            if (response && response.registration) {
+                const registrationData = response.registration;
+                
+                this.log('Registration successful, email verification required:', { 
+                    userId: registrationData.userId,
+                    email: registrationData.email,
+                    message: registrationData.message
+                });
+                
+                return {
+                    success: true,
+                    message: registrationData.message || 'Đăng ký thành công. Vui lòng kiểm tra email để xác minh tài khoản.',
+                    email: registrationData.email,
+                    userId: registrationData.userId
+                };
+            } else {
+                // Fallback for different response format
+                this.log('Registration successful with different format:', response);
+                return {
+                    success: true,
+                    message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác minh tài khoản.',
+                    email: userData.email
+                };
+            }
+        } catch (error) {
+            this.log('Registration error:', error);
+            throw error;
+        }
+    }
+
+    // Verify email with OTP
+    async verifyEmail(verificationData) {
+        try {
+            this.log('Attempting email verification:', { email: verificationData.email });
+
+            // Transform data to match backend VerificationRequest format
+            // Check if backend needs email or just code
+            const requestData = {
+                code: verificationData.otp  // Backend expects 'code' field
+            };
+
+            // Add email if backend needs it (uncomment if needed)
+            // requestData.email = verificationData.email;
+
+            this.log('Verification request data:', requestData);
+
+            const url = `${this.baseUrl}${ENDPOINTS.AUTH.VERIFY_EMAIL}`;
+            const response = await this.makeRequest(url, {
+                method: 'POST',
+                body: JSON.stringify(requestData)
+            });
+
             if (response.token && response.user) {
-                // Store auth data
+                // Store auth data after successful verification
                 await this.setAuthToken(response.token);
                 await this.setUserData(response.user);
                 
-                this.log('Registration successful:', { 
+                this.log('Email verification successful:', { 
                     userId: response.user.id, 
                     email: response.user.email 
                 });
@@ -275,10 +337,36 @@ class AuthService {
                     token: response.token
                 };
             } else {
-                throw new Error('Invalid response format from server');
+                this.log('Email verification response:', response);
+                return {
+                    success: true,
+                    message: 'Email verified successfully'
+                };
             }
         } catch (error) {
-            this.log('Registration error:', error);
+            this.log('Email verification error:', error);
+            throw error;
+        }
+    }
+
+    // Resend OTP
+    async resendOtp(data) {
+        try {
+            this.log('Attempting to resend OTP:', { email: data.email });
+
+            const url = `${this.baseUrl}${ENDPOINTS.AUTH.RESEND_OTP}`;
+            const response = await this.makeRequest(url, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+
+            this.log('OTP resent successfully');
+            return {
+                success: true,
+                message: 'OTP sent successfully'
+            };
+        } catch (error) {
+            this.log('Resend OTP error:', error);
             throw error;
         }
     }
@@ -495,6 +583,21 @@ class AuthService {
     // Legacy method for getting token (backward compatibility)
     async getToken() {
         return await this.getAuthToken();
+    }
+
+    // Get refresh token (for UserContext compatibility)
+    async getRefreshToken() {
+        try {
+            return await AsyncStorage.getItem('refreshToken');
+        } catch (error) {
+            this.log('Error getting refresh token:', error);
+            return null;
+        }
+    }
+
+    // Get user info (for UserContext compatibility)
+    async getUserInfo() {
+        return await this.getUserData();
     }
 
     // Legacy method for saving tokens (backward compatibility)

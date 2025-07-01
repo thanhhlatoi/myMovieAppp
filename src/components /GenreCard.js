@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from "react-native";
-import COLORS from "../constants/Colors";
-import FONTS from "../constants/Fonts";
+import { COLORS } from "../constants/Colors";
+import { FONTS } from "../constants/Fonts";
 
 const { width } = Dimensions.get("screen");
 

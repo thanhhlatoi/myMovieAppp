@@ -2,7 +2,7 @@
 class VideoApiService {
     constructor() {
         // Thay đổi base URL để chỉ sử dụng mobile endpoints
-        this.baseURL = 'http://192.168.100.193:8082/api/videofilm';
+        this.baseURL = 'http://172.20.10.7:8082/api/videofilm';
     }
 
     async handleResponse(response) {
@@ -65,11 +65,7 @@ class VideoApiService {
 
     // === MOBILE HLS STREAMING API ===
 
-    /**
-     * 1. Lấy MASTER PLAYLIST cho Mobile - Chứa danh sách các quality levels
-     * URL: http://192.168.100.193:8082/api/videofilm/stream/mobile/2
-     * Trả về: Master playlist với danh sách các sub-playlist (quality levels)
-     */
+ 
     async getMasterPlaylist(videoId) {
         try {
             console.log(`🎬 Getting MOBILE master playlist for video ${videoId}`);

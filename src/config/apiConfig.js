@@ -3,8 +3,8 @@ import { Platform } from 'react-native';
 
 // Development configurations
 const DEVELOPMENT_CONFIG = {
-    // For Android Emulator use 10.0.2.2, for iOS Simulator use localhost
-    BASE_URL: Platform.OS === 'android' ? 'http://192.168.100.193:8082/api' : 'http://localhost:8080/api',
+    // Updated to use the current server IP
+    BASE_URL: 'http://172.20.10.7:8082/api',
     TIMEOUT: 30000, // 30 seconds
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000, // 1 second
@@ -57,6 +57,8 @@ export const ENDPOINTS = {
     AUTH: {
         LOGIN: '/auth/login',
         REGISTER: '/auth/register',
+        VERIFY_EMAIL: '/auth/verify',
+        RESEND_OTP: '/auth/resend-otp',
         REFRESH: '/auth/refresh',
         LOGOUT: '/auth/logout',
     },
@@ -130,6 +132,8 @@ export const FEATURE_FLAGS = {
     ENABLE_CACHE: true,
     ENABLE_ANALYTICS: true,
     ENABLE_CRASH_REPORTING: !__DEV__,
+    ENABLE_REVIEWS: false, // Disable reviews if server doesn't have endpoints yet
+    ENABLE_REVIEW_STATS: false, // Disable review stats to prevent timeout errors
 };
 
 export default {

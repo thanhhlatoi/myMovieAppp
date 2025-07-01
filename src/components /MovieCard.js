@@ -9,10 +9,11 @@ import {
   Dimensions,
   Animated,
 } from "react-native";
-import COLORS from "../constants/Colors";
-import FONTS from "../constants/Fonts";
+import { COLORS } from "../constants/Colors";
+import { FONTS } from "../constants/Fonts";
 import IMAGES from "../constants/Images";
 import Ionicons from "react-native-vector-icons/Ionicons";
+import MovieService from "../services/MovieService";
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.35; // 35% của màn hình
@@ -39,15 +40,31 @@ const MovieCard = ({ movie = {}, heartLess = true, onPress, style }) => {
     }).start();
   };
 
-  const handleLikePress = () => {
-    setLiked(!liked);
-    // Có thể gọi API để update like status
-    // updateMovieLike(movie.id, !liked);
+  const handleLikePress = async () => {
+    const newLikedState = !liked;
+    setLiked(newLikedState);
+    
+    try {
+      // Call the like API
+      if (movie.id) {
+        if (newLikedState) {
+          await MovieService.likeMovie(movie.id);
+          console.log(`💖 Liked movie: ${movie.title}`);
+        } else {
+          // If unlike functionality exists, call it here
+          console.log(`💔 Unliked movie: ${movie.title}`);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error updating like status:', error);
+      // Revert the like state if API call fails
+      setLiked(!newLikedState);
+    }
   };
 
   // Xử lý URL ảnh từ API của bạn
   const imageUri = movie.imgMovie
-      ? `http://192.168.100.193:8082/api/videos/view?bucketName=thanh&path=${movie.imgMovie}`
+      ? `http://172.20.10.7:8082/api/videos/view?bucketName=thanh&path=${movie.imgMovie}`
       : 'https://via.placeholder.com/300x450/333333/FFFFFF?text=No+Image';
 
   // Lấy thể loại đầu tiên từ genres array
@@ -188,14 +205,29 @@ const MovieCard = ({ movie = {}, heartLess = true, onPress, style }) => {
               <View style={styles.statItem}>
                 <Ionicons name="heart" size={14} color={COLORS.HEART || '#FF6B6B'} />
                 <Text style={styles.statText}>
-                  {movie.likes || 0}
+                  {(() => {
+                    // Enhanced likes display with debugging
+                    console.log('MovieCard likes debug for', movie.title, ':', {
+                      likes: movie.likes,
+                      movieId: movie.id,
+                      allFields: Object.keys(movie || {})
+                    });
+                    
+                    // Display real data from API
+                    const likesCount = movie.likes ?? movie.likeCount ?? movie.totalLikes ?? 0;
+                    return likesCount;
+                  })()}
                 </Text>
               </View>
 
               <View style={styles.statItem}>
                 <Ionicons name="eye" size={14} color={COLORS.ACTIVE || '#E50914'} />
                 <Text style={styles.statText}>
-                  {movie.views || 0}
+                  {(() => {
+                    // Enhanced views display
+                    const viewsCount = movie.views ?? movie.viewCount ?? movie.totalViews ?? 0;
+                    return viewsCount;
+                  })()}
                 </Text>
               </View>
             </View>

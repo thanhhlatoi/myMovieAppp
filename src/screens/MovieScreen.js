@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,21 +11,54 @@ import {
   Dimensions,
   StatusBar,
   Animated,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import favoriteService from '../services/FavoriteService';
 import ReviewService from '../services/ReviewService';
 import ReviewCard from '../components/review/ReviewCard';
+import MovieService from '../services/MovieService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUser } from '../contexts/UserContext';
 
 const { width, height } = Dimensions.get('window');
 
 const MovieScreen = ({ route, navigation }) => {
   const movie = route.params?.movie?.data || route.params?.movie;
+  const { user, isAuthenticated } = useUser();
+  
+  // Debug authentication status
+  useEffect(() => {
+    console.log('=== MovieScreen Authentication Debug ===');
+    console.log('User from context:', user);
+    console.log('User ID:', user?.id);
+    console.log('User email:', user?.email);
+    console.log('IsAuthenticated:', isAuthenticated);
+    console.log('Movie ID:', movie?.id);
+    console.log('==========================================');
+  }, [user, isAuthenticated]);
+  
   const [liked, setLiked] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isLoadingFavorite, setIsLoadingFavorite] = useState(false);
+
+  // ✨ NEW: Add state for likes count to trigger UI re-renders
+  const [likesCount, setLikesCount] = useState(movie?.likes || 0);
+  const [dislikesCount, setDislikesCount] = useState(movie?.dislikes || 0);
+  const [disliked, setDisliked] = useState(false);
+
+  // ✨ NEW: Add loading states to prevent spam clicking
+  const [isLiking, setIsLiking] = useState(false);
+  const [isDisliking, setIsDisliking] = useState(false);
+
+  // 🚫 RATE LIMITING: Track last click times
+  const lastLikeClickRef = useRef(0);
+  const lastDislikeClickRef = useRef(0);
+
+  // 🚫 GLOBAL FLAG: Prevent multiple API calls
+  const isProcessingRef = useRef(false);
 
   // Review states
   const [reviews, setReviews] = useState([]);
@@ -36,14 +69,28 @@ const MovieScreen = ({ route, navigation }) => {
 
   console.log("📦 Dữ liệu phim:", movie);
 
+  // Helper function to get user ID safely
+  const getUserId = () => {
+    if (!isAuthenticated || !user?.id) {
+      console.warn('User not authenticated or missing ID');
+      return null;
+    }
+    return user.id;
+  };
+
   useEffect(() => {
     if (movie?.id) {
       checkFavoriteStatus();
       loadReviews();
       loadReviewStats();
       checkUserReviewStatus();
+      
+      // Only load user status if authenticated
+      if (isAuthenticated && user?.id) {
+        loadUserLikeStatus();
+      }
     }
-  }, [movie?.id]);
+  }, [movie?.id, isAuthenticated, user?.id]);
 
   const checkFavoriteStatus = async () => {
     try {
@@ -141,9 +188,224 @@ const MovieScreen = ({ route, navigation }) => {
     });
   };
 
-  const handleLike = () => {
-    setLiked(!liked);
-    // TODO: Call API to update like status
+  const handleLike = async () => {
+    // 🚫 ENHANCED SPAM PREVENTION
+    if (isLiking || isDisliking || isProcessingRef.current) {
+      console.warn('⚠️ Already processing like/dislike, ignoring click');
+      return;
+    }
+
+    // 🚫 RATE LIMITING: Prevent rapid clicks (minimum 500ms between clicks)
+    const now = Date.now();
+    const lastClickTime = lastLikeClickRef.current || 0;
+    if (now - lastClickTime < 500) {
+      console.warn('⚠️ Rate limited: Too fast clicking, ignoring');
+      return;
+    }
+    lastLikeClickRef.current = now;
+
+    // 🔒 SET GLOBAL PROCESSING FLAG
+    isProcessingRef.current = true;
+
+    // Get real user ID from context
+    const userId = user?.id;
+    if (!userId || !isAuthenticated) {
+      Alert.alert('⚠️ Lỗi', 'Bạn cần đăng nhập để thực hiện hành động này');
+      setIsLiking(false);
+      isProcessingRef.current = false;
+      return;
+    }
+    
+    // 🎯 ONE-LIKE-PER-USER LOGIC:
+    // If user is already liked, remove like
+    // If user is disliked, switch to like
+    // If user has no reaction, add like
+    
+    setIsLiking(true); // 🔒 Lock button
+    
+    try {
+      if (liked) {
+        // User already liked - REMOVE LIKE
+        setLiked(false);
+        setLikesCount(Math.max(likesCount - 1, 0));
+        
+        // Try enhanced API first, fallback to regular
+        try {
+          const response = await MovieService.likeMovieEnhanced(movie.id, userId);
+          console.log(`💔 Removed like for movie: ${movie.title}`, response);
+        } catch (apiError) {
+          console.warn('⚠️ Enhanced API failed, using regular like:', apiError);
+          await MovieService.likeMovie(movie.id);
+        }
+        
+        await saveUserLikeStatus(false, disliked);
+        Alert.alert('💔', 'Đã bỏ thích phim này');
+        
+      } else if (disliked) {
+        // User was disliked - SWITCH TO LIKE
+        setLiked(true);
+        setDisliked(false);
+        setLikesCount(likesCount + 1);
+        setDislikesCount(Math.max(dislikesCount - 1, 0));
+        
+        // Call both APIs to handle the switch
+        try {
+          await MovieService.likeMovieEnhanced(movie.id, userId);
+          console.log(`💖 Switched from dislike to like for movie: ${movie.title}`);
+        } catch (apiError) {
+          await MovieService.likeMovie(movie.id);
+        }
+        
+        await saveUserLikeStatus(true, false);
+        Alert.alert('💖', 'Đã chuyển từ không thích sang thích phim này');
+        
+      } else {
+        // User has no reaction - ADD LIKE
+        setLiked(true);
+        setLikesCount(likesCount + 1);
+        
+        try {
+          const response = await MovieService.likeMovieEnhanced(movie.id, userId);
+          console.log(`💖 Added like for movie: ${movie.title}`, response);
+        } catch (apiError) {
+          await MovieService.likeMovie(movie.id);
+        }
+        
+        await saveUserLikeStatus(true, false);
+        Alert.alert('💖', 'Đã thích phim này');
+      }
+      
+      // Refresh movie data to get updated counts
+      try {
+        const updatedMovie = await MovieService.getMovieById(movie.id);
+        if (updatedMovie?.data?.likes !== undefined) {
+          setLikesCount(updatedMovie.data.likes);
+          setDislikesCount(updatedMovie.data.dislikes);
+          console.log(`🔄 Updated counts from server: ${updatedMovie.data.likes} likes, ${updatedMovie.data.dislikes} dislikes`);
+        }
+      } catch (refreshError) {
+        console.warn('⚠️ Could not refresh movie data:', refreshError);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error updating like status:', error);
+      
+      // Revert changes on error
+      await loadUserLikeStatus();
+      Alert.alert('❌ Lỗi', 'Không thể cập nhật trạng thái thích. Vui lòng thử lại.');
+    } finally {
+      setIsLiking(false); // 🔓 Unlock button
+      isProcessingRef.current = false; // 🔓 Unlock global flag
+    }
+  };
+
+  const handleDislike = async () => {
+    // 🚫 ENHANCED SPAM PREVENTION
+    if (isLiking || isDisliking || isProcessingRef.current) {
+      console.warn('⚠️ Already processing like/dislike, ignoring click');
+      return;
+    }
+
+    // 🚫 RATE LIMITING: Prevent rapid clicks (minimum 500ms between clicks)
+    const now = Date.now();
+    const lastClickTime = lastDislikeClickRef.current || 0;
+    if (now - lastClickTime < 500) {
+      console.warn('⚠️ Rate limited: Too fast clicking, ignoring');
+      return;
+    }
+    lastDislikeClickRef.current = now;
+
+    // 🔒 SET GLOBAL PROCESSING FLAG
+    isProcessingRef.current = true;
+
+    // Get real user ID from context
+    const userId = user?.id;
+    if (!userId || !isAuthenticated) {
+      Alert.alert('⚠️ Lỗi', 'Bạn cần đăng nhập để thực hiện hành động này');
+      setIsDisliking(false);
+      isProcessingRef.current = false;
+      return;
+    }
+    
+    // 🎯 ONE-DISLIKE-PER-USER LOGIC:
+    // If user already disliked, remove dislike
+    // If user is liked, switch to dislike
+    // If user has no reaction, add dislike
+    
+    setIsDisliking(true); // 🔒 Lock button
+    
+    try {
+      if (disliked) {
+        // User already disliked - REMOVE DISLIKE
+        setDisliked(false);
+        setDislikesCount(Math.max(dislikesCount - 1, 0));
+        
+        try {
+          const response = await MovieService.dislikeMovieEnhanced(movie.id, userId);
+          console.log(`👍 Removed dislike for movie: ${movie.title}`, response);
+        } catch (apiError) {
+          console.warn('⚠️ Enhanced API failed, using regular dislike:', apiError);
+          await MovieService.dislikeMovie(movie.id);
+        }
+        
+        await saveUserLikeStatus(liked, false);
+        Alert.alert('👍', 'Đã bỏ không thích phim này');
+        
+      } else if (liked) {
+        // User was liked - SWITCH TO DISLIKE
+        setLiked(false);
+        setDisliked(true);
+        setLikesCount(Math.max(likesCount - 1, 0));
+        setDislikesCount(dislikesCount + 1);
+        
+        try {
+          await MovieService.dislikeMovieEnhanced(movie.id, userId);
+          console.log(`👎 Switched from like to dislike for movie: ${movie.title}`);
+        } catch (apiError) {
+          await MovieService.dislikeMovie(movie.id);
+        }
+        
+        await saveUserLikeStatus(false, true);
+        Alert.alert('👎', 'Đã chuyển từ thích sang không thích phim này');
+        
+      } else {
+        // User has no reaction - ADD DISLIKE
+        setDisliked(true);
+        setDislikesCount(dislikesCount + 1);
+        
+        try {
+          const response = await MovieService.dislikeMovieEnhanced(movie.id, userId);
+          console.log(`👎 Added dislike for movie: ${movie.title}`, response);
+        } catch (apiError) {
+          await MovieService.dislikeMovie(movie.id);
+        }
+        
+        await saveUserLikeStatus(false, true);
+        Alert.alert('👎', 'Đã không thích phim này');
+      }
+      
+      // Refresh movie data to get updated counts
+      try {
+        const updatedMovie = await MovieService.getMovieById(movie.id);
+        if (updatedMovie?.data?.dislikes !== undefined) {
+          setLikesCount(updatedMovie.data.likes);
+          setDislikesCount(updatedMovie.data.dislikes);
+          console.log(`🔄 Updated counts from server: ${updatedMovie.data.likes} likes, ${updatedMovie.data.dislikes} dislikes`);
+        }
+      } catch (refreshError) {
+        console.warn('⚠️ Could not refresh movie data:', refreshError);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error updating dislike status:', error);
+      
+      // Revert changes on error
+      await loadUserLikeStatus();
+      Alert.alert('❌ Lỗi', 'Không thể cập nhật trạng thái không thích. Vui lòng thử lại.');
+    } finally {
+      setIsDisliking(false); // 🔓 Unlock button
+      isProcessingRef.current = false; // 🔓 Unlock global flag
+    }
   };
 
   // ===================== REVIEW FUNCTIONS =====================
@@ -169,8 +431,17 @@ const MovieScreen = ({ route, navigation }) => {
     try {
       const stats = await ReviewService.getMovieReviewStats(movie.id);
       setReviewStats(stats);
+      console.log('✅ Review stats loaded successfully for movie:', movie.id, stats);
     } catch (error) {
       console.error('Error loading review stats:', error);
+      
+      // ✨ FALLBACK: Set default stats if API fails
+      setReviewStats({
+        totalReviews: 0,
+        averageRating: 0,
+        ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+        lastUpdated: new Date().toISOString()
+      });
     }
   };
 
@@ -222,6 +493,71 @@ const MovieScreen = ({ route, navigation }) => {
   const imageUri = movie.imgMovie
       ? `http://192.168.100.193:8082/api/movieProduct/view?bucketName=thanh&path=${movie.imgMovie}`
       : 'https://via.placeholder.com/400x600/333/FFF?text=No+Image';
+
+  // NEW: Load user's like/dislike status from both API and AsyncStorage
+  const loadUserLikeStatus = async () => {
+    try {
+      const userId = user?.id;
+      if (!userId || !isAuthenticated) {
+        console.warn('User not authenticated, skipping like status load');
+        return;
+      }
+      const storageKey = `user_${userId}_movie_${movie.id}_like_status`;
+      
+      // Check AsyncStorage first (for offline capability)
+      const storedStatus = await AsyncStorage.getItem(storageKey);
+      if (storedStatus) {
+        const { liked, disliked } = JSON.parse(storedStatus);
+        setLiked(liked);
+        setDisliked(disliked);
+        console.log(`📱 Loaded like status from storage: liked=${liked}, disliked=${disliked}`);
+      }
+      
+      // Also check with API if available
+      try {
+        const apiStatus = await MovieService.checkUserLikeStatus(movie.id, userId);
+        if (apiStatus) {
+          setLiked(apiStatus.liked || false);
+          setDisliked(apiStatus.disliked || false);
+          
+          // Update AsyncStorage with API data
+          await AsyncStorage.setItem(storageKey, JSON.stringify({
+            liked: apiStatus.liked || false,
+            disliked: apiStatus.disliked || false,
+            timestamp: new Date().toISOString()
+          }));
+          
+          console.log(`🌐 Updated like status from API: liked=${apiStatus.liked}, disliked=${apiStatus.disliked}`);
+        }
+      } catch (apiError) {
+        console.warn('⚠️ API like status check failed, using stored data:', apiError);
+      }
+    } catch (error) {
+      console.error('❌ Error loading user like status:', error);
+    }
+  };
+
+  // NEW: Save user like status to AsyncStorage
+  const saveUserLikeStatus = async (liked, disliked) => {
+    try {
+      const userId = user?.id;
+      if (!userId || !isAuthenticated) {
+        console.warn('User not authenticated, skipping like status save');
+        return;
+      }
+      const storageKey = `user_${userId}_movie_${movie.id}_like_status`;
+      
+      await AsyncStorage.setItem(storageKey, JSON.stringify({
+        liked,
+        disliked,
+        timestamp: new Date().toISOString()
+      }));
+      
+      console.log(`💾 Saved like status to storage: liked=${liked}, disliked=${disliked}`);
+    } catch (error) {
+      console.error('❌ Error saving like status:', error);
+    }
+  };
 
   return (
       <View style={styles.container}>
@@ -283,6 +619,16 @@ const MovieScreen = ({ route, navigation }) => {
             </ImageBackground>
           </View>
 
+          {/* Authentication Notice */}
+          {!isAuthenticated && (
+            <View style={styles.authNotice}>
+              <Ionicons name="information-circle-outline" size={20} color="#FFD700" />
+              <Text style={styles.authNoticeText}>
+                Đăng nhập để thích phim và viết đánh giá
+              </Text>
+            </View>
+          )}
+
           {/* Action Buttons */}
           <View style={styles.actionSection}>
             <TouchableOpacity style={styles.playButton} onPress={handleWatchMovie}>
@@ -292,16 +638,26 @@ const MovieScreen = ({ route, navigation }) => {
 
             <View style={styles.secondaryActions}>
               <TouchableOpacity
-                  style={[styles.actionButton, liked && styles.actionButtonActive]}
+                  style={[
+                    styles.actionButton, 
+                    liked && styles.actionButtonActive,
+                    (isLiking || isDisliking) && styles.actionButtonLoading,
+                    !isAuthenticated && styles.actionButtonDisabled
+                  ]}
                   onPress={handleLike}
+                  disabled={isLiking || isDisliking || !isAuthenticated}
+                  activeOpacity={isLiking || isDisliking || !isAuthenticated ? 1 : 0.7}
               >
                 <Ionicons
                     name={liked ? "heart" : "heart-outline"}
                     size={24}
-                    color={liked ? "#E50914" : "#fff"}
+                    color={liked ? "#E50914" : ((isLiking || isDisliking || !isAuthenticated) ? "#666" : "#fff")}
                 />
-                <Text style={styles.actionButtonText}>
-                  {movie.likes || 0}
+                <Text style={[
+                  styles.actionButtonText,
+                  (isLiking || isDisliking) && styles.actionButtonTextLoading
+                ]}>
+                  {isLiking ? "..." : (isAuthenticated ? likesCount : "?")}
                 </Text>
               </TouchableOpacity>
 
@@ -328,9 +684,28 @@ const MovieScreen = ({ route, navigation }) => {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.actionButton}>
-                <Icon name="download" size={24} color="#fff" />
-                <Text style={styles.actionButtonText}>Tải</Text>
+              <TouchableOpacity 
+                style={[
+                  styles.actionButton, 
+                  disliked && styles.actionButtonActive,
+                  (isLiking || isDisliking) && styles.actionButtonLoading,
+                  !isAuthenticated && styles.actionButtonDisabled
+                ]}
+                onPress={handleDislike}
+                disabled={isLiking || isDisliking || !isAuthenticated}
+                activeOpacity={isLiking || isDisliking || !isAuthenticated ? 1 : 0.7}
+              >
+                <Ionicons
+                  name={disliked ? "thumbs-down" : "thumbs-down-outline"}
+                  size={24}
+                  color={disliked ? "#F44336" : ((isLiking || isDisliking || !isAuthenticated) ? "#666" : "#fff")}
+                />
+                <Text style={[
+                  styles.actionButtonText,
+                  (isLiking || isDisliking) && styles.actionButtonTextLoading
+                ]}>
+                  {isDisliking ? "..." : (isAuthenticated ? dislikesCount : "?")}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -428,17 +803,25 @@ const MovieScreen = ({ route, navigation }) => {
               <View style={styles.statsContainer}>
                 <View style={styles.statItem}>
                   <Icon name="thumb-up" size={20} color="#4CAF50" />
-                  <Text style={styles.statNumber}>{movie.likes || 0}</Text>
+                  <Text style={styles.statNumber}>
+                    {likesCount}
+                  </Text>
                   <Text style={styles.statLabel}>Thích</Text>
                 </View>
                 <View style={styles.statItem}>
                   <Icon name="thumb-down" size={20} color="#F44336" />
-                  <Text style={styles.statNumber}>{movie.dislikes || 0}</Text>
+                  <Text style={styles.statNumber}>{dislikesCount}</Text>
                   <Text style={styles.statLabel}>Không thích</Text>
                 </View>
                 <View style={styles.statItem}>
                   <Icon name="visibility" size={20} color="#2196F3" />
-                  <Text style={styles.statNumber}>{movie.views || 0}</Text>
+                  <Text style={styles.statNumber}>
+                    {(() => {
+                      // Enhanced views display for stats section
+                      const viewsCount = movie.views ?? movie.viewCount ?? movie.totalViews ?? 0;
+                      return viewsCount;
+                    })()}
+                  </Text>
                   <Text style={styles.statLabel}>Lượt xem</Text>
                 </View>
               </View>
@@ -843,6 +1226,31 @@ const styles = StyleSheet.create({
   },
   actionButtonLoading: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    opacity: 0.7,
+  },
+  actionButtonTextLoading: {
+    color: '#999',
+  },
+  actionButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    opacity: 0.5,
+  },
+  authNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    padding: 12,
+    marginHorizontal: 20,
+    marginTop: 10,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFD700',
+  },
+  authNoticeText: {
+    color: '#FFD700',
+    fontSize: 14,
+    marginLeft: 8,
+    flex: 1,
   },
   reviewHeader: {
     flexDirection: 'row',

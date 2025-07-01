@@ -16,11 +16,13 @@ import {
 } from 'react-native';
 import { jwtDecode } from 'jwt-decode';
 import AuthService from '../services/AuthService';
-import Icon from 'react-native-vector-icons/MaterialIcons'; // Cần cài: npm install react-native-vector-icons
+import { useUser } from '../contexts/UserContext';
+import Icon from 'react-native-vector-icons/MaterialIcons'; 
 
 const { width, height } = Dimensions.get('window');
 
 const LoginScreen = ({ navigation }) => {
+  const { login, isAuthenticated, isLoading: contextLoading } = useUser();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -39,6 +41,14 @@ const LoginScreen = ({ navigation }) => {
     checkExistingToken();
     testServerConnection();
   }, []);
+
+  // Check if user is already authenticated via UserContext
+  useEffect(() => {
+    if (isAuthenticated && !contextLoading) {
+      console.log('User already authenticated, navigating to home');
+      navigation.navigate('home');
+    }
+  }, [isAuthenticated, contextLoading]);
 
   const checkExistingToken = async () => {
     try {
@@ -129,22 +139,28 @@ const LoginScreen = ({ navigation }) => {
       console.log('🎭 User authenticated:', decoded);
 
       if (scope && scope.includes('ROLE_USERS')) {
-        await AuthService.saveTokens(token, refreshToken);
-        if (user) {
-          await AuthService.saveUserInfo(user);
-        }
+        // Use UserContext login method instead of direct AuthService
+        const loginSuccess = await login({
+          token: token,
+          refreshToken: refreshToken,
+          user: user
+        });
 
-        Alert.alert(
-            '🎉 Chào mừng trở lại!',
-            `Xin chào ${user?.fullName || decoded?.name || 'Cinephile'}!\n\n🎬 Sẵn sàng khám phá thế giới điện ảnh?\n\n⏰ Phiên làm việc hết hạn: ${new Date(decoded.exp * 1000).toLocaleString('vi-VN')}`,
-            [
-              {
-                text: '🍿 Bắt đầu xem phim',
-                onPress: () => navigation.navigate('home'),
-                style: 'default'
-              }
-            ]
-        );
+        if (loginSuccess) {
+          Alert.alert(
+              '🎉 Chào mừng trở lại!',
+              `Xin chào ${user?.fullName || decoded?.name || 'Cinephile'}!\n\n🎬 Sẵn sàng khám phá thế giới điện ảnh?\n\n⏰ Phiên làm việc hết hạn: ${new Date(decoded.exp * 1000).toLocaleString('vi-VN')}`,
+              [
+                {
+                  text: '🍿 Bắt đầu xem phim',
+                  onPress: () => navigation.navigate('home'),
+                  style: 'default'
+                }
+              ]
+          );
+        } else {
+          Alert.alert('❌ Lỗi', 'Không thể đăng nhập vào hệ thống');
+        }
       } else {
         Alert.alert(
             '🚫 Quyền truy cập bị từ chối',
@@ -194,11 +210,7 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleRegister = () => {
-    Alert.alert(
-        '📝 Đăng ký mới',
-        'Tính năng đăng ký tài khoản mới sẽ có sớm!\n\n🎬 Hiện tại liên hệ admin để tạo tài khoản.',
-        [{ text: 'Đã hiểu', style: 'default' }]
-    );
+    navigation.navigate('Register');
   };
 
   if (isCheckingAuth) {
@@ -311,13 +323,7 @@ const LoginScreen = ({ navigation }) => {
               </View>
 
               {/* Debug info chỉ hiển thị khi development */}
-              {__DEV__ && (
-                  <View style={styles.debugContainer}>
-                    <Text style={styles.debugText}>
-                      🔧 Dev Mode - Server: http://192.168.100.193:8082
-                    </Text>
-                  </View>
-              )}
+             
             </View>
           </Animated.View>
         </ImageBackground>

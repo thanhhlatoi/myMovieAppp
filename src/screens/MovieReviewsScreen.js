@@ -125,8 +125,17 @@ const MovieReviewsScreen = ({ route, navigation }) => {
         try {
             const stats = await ReviewService.getMovieReviewStats(movie.id);
             setReviewStats(stats);
+            console.log('✅ Review stats loaded successfully:', stats);
         } catch (error) {
             console.error('Error loading review stats:', error);
+            
+            // ✨ FALLBACK: Set default stats if API fails
+            setReviewStats({
+                totalReviews: 0,
+                averageRating: 0,
+                ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+                lastUpdated: new Date().toISOString()
+            });
         }
     };
 
@@ -134,8 +143,12 @@ const MovieReviewsScreen = ({ route, navigation }) => {
         try {
             const distribution = await ReviewService.getRatingDistribution(movie.id);
             setRatingDistribution(distribution);
+            console.log('✅ Rating distribution loaded successfully:', distribution);
         } catch (error) {
             console.error('Error loading rating distribution:', error);
+            
+            // ✨ FALLBACK: Set default distribution if API fails
+            setRatingDistribution({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
         }
     };
 

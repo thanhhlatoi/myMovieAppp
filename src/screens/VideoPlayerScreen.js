@@ -22,6 +22,44 @@ export default function VideoPlayerScreen({ route, navigation }) {
   const movieData = route?.params?.movie || route?.params?.movieData;
   const movieTitle = route?.params?.movieTitle || movieData?.title || `Video ${videoId}`;
 
+  // ✨ ENHANCED: Add validation for video existence
+  useEffect(() => {
+    const validateVideoExists = async () => {
+      try {
+        console.log('🔍 Validating video existence for ID:', videoId);
+        
+        // Check if video exists in database
+        const response = await fetch(`http://172.20.10.7:8082/api/videos/${videoId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          console.error(`❌ Video ID ${videoId} not found in database`);
+          setError(`Video không tồn tại (ID: ${videoId})`);
+          return;
+        }
+
+        const videoData = await response.json();
+        console.log('✅ Video validation successful:', videoData.data?.id);
+
+        // Check if video has movieProduct
+        if (!videoData.data?.movieProduct) {
+          console.warn(`⚠️ Video ID ${videoId} has no associated movieProduct`);
+          // Still allow playback but show warning
+        }
+
+      } catch (error) {
+        console.error('❌ Error validating video:', error);
+        setError(`Lỗi khi kiểm tra video: ${error.message}`);
+      }
+    };
+
+    validateVideoExists();
+  }, [videoId]);
+
   // State management
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -89,7 +127,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
 
   // Server configuration
   const serverConfig = {
-    baseURL: 'http://192.168.100.193:8082/api/videofilm',
+    baseURL: 'http://172.20.10.7:8082/api/videofilm',
     masterEndpoint: `/stream/mobile/${videoId}`,
   };
 
@@ -105,46 +143,86 @@ export default function VideoPlayerScreen({ route, navigation }) {
     return true; // Change to false for physical device testing
   };
 
-  // Initialize video player with optimized settings
+  // Initialize video player with enhanced error handling
   const player = useVideoPlayer(currentStreamUrl, (player) => {
-    // ✨ FIXED: Enhanced null checks and error handling
+    // ✨ ENHANCED: Better type and null checks
+    console.log('🎬 VideoPlayer initialization callback triggered');
+    console.log('🔍 Player object type:', typeof player);
+    console.log('🔍 Player object value:', player);
+    
     if (!player) {
       console.warn('⚠️ Player object is null during initialization');
       return;
     }
     
+    // Ensure we have a valid player object, not an integer or other type
+    if (typeof player !== 'object' || player === null || Number.isInteger(player)) {
+      console.error('❌ Invalid player object type during initialization:', typeof player, player);
+      return;
+    }
+    
     try {
-      // Check if player object is still valid
-      if (player && typeof player === 'object' && !player._isReleased) {
-        player.loop = false;
-        player.muted = false;
+      // Additional safety checks for player methods and properties
+      if (typeof player.pause !== 'function') {
+        console.error('❌ Player object missing required methods');
+        return;
+      }
+      
+      console.log('🎬 Setting up valid VideoPlayer object...');
+      
+      // Basic player configuration
+      if ('loop' in player) player.loop = false;
+      if ('muted' in player) player.muted = false;
 
-        // Virtual machine optimizations
-        if (isLowPerformanceDevice()) {
-          // Reduce buffer sizes for VM
+      // Virtual machine optimizations
+      if (isLowPerformanceDevice()) {
+        console.log('🖥️ Applying VM optimizations...');
+        
+        // Reduce buffer sizes for VM
+        if ('allowsExternalPlayback' in player) {
           player.allowsExternalPlayback = false;
+        }
+        if ('preventsDisplaySleepDuringVideoPlayback' in player) {
           player.preventsDisplaySleepDuringVideoPlayback = false; // Save resources
+        }
 
-          // Set lower quality defaults
-          if (player.preferredPeakBitRate !== undefined) {
+        // Set lower quality defaults if supported
+        try {
+          if ('preferredPeakBitRate' in player && player.preferredPeakBitRate !== undefined) {
             player.preferredPeakBitRate = 500000; // 500kbps max for VM
           }
-          if (player.preferredMaximumResolution !== undefined) {
+          if ('preferredMaximumResolution' in player && player.preferredMaximumResolution !== undefined) {
             player.preferredMaximumResolution = { width: 640, height: 360 }; // Max 360p
           }
-        } else {
+        } catch (optimizationError) {
+          console.warn('⚠️ Could not apply some VM optimizations:', optimizationError);
+        }
+      } else {
+        console.log('📱 Applying standard device optimizations...');
+        
+        if ('allowsExternalPlayback' in player) {
           player.allowsExternalPlayback = false;
+        }
+        if ('preventsDisplaySleepDuringVideoPlayback' in player) {
           player.preventsDisplaySleepDuringVideoPlayback = true;
         }
-        
-        console.log('✅ VideoPlayer initialized successfully');
-      } else {
-        console.error('❌ Invalid player object during initialization');
       }
+      
+      console.log('✅ VideoPlayer initialized successfully with type:', typeof player);
     } catch (error) {
-      console.error('❌ Error initializing video player:', error);
+      console.error('❌ Error during VideoPlayer configuration:', error);
     }
   });
+
+  // Initialize player on component mount
+  useEffect(() => {
+    console.log('🚀 VideoPlayerScreen component mounted');
+    initializePlayer();
+    
+    return () => {
+      console.log('🧹 VideoPlayerScreen component unmounting...');
+    };
+  }, []);
 
   // Monitor network status
   useEffect(() => {
@@ -416,38 +494,38 @@ export default function VideoPlayerScreen({ route, navigation }) {
           return;
         }
         
-        console.log('Status changed:', oldStatus, '->', status);
+      console.log('Status changed:', oldStatus, '->', status);
 
-        if (status === 'error' && error) {
-          console.error('❌ Video error:', error);
-          handleVideoError(error);
-        }
+      if (status === 'error' && error) {
+        console.error('❌ Video error:', error);
+        handleVideoError(error);
+      }
 
-        if (status === 'loaded') {
-          console.log('✅ Video loaded successfully');
-          setLoading(false);
-          setError(null);
+      if (status === 'loaded') {
+        console.log('✅ Video loaded successfully');
+        setLoading(false);
+        setError(null);
           // Safe access to player.duration
           try {
             if (player && player.duration !== undefined) {
-              setDuration(player.duration);
+        setDuration(player.duration);
             }
           } catch (e) {
             console.warn('⚠️ Could not access player.duration:', e);
           }
-          setIsBuffering(false);
-        }
+        setIsBuffering(false);
+      }
 
-        if (status === 'loading') {
-          console.log('📡 Video loading...');
-          setIsBuffering(true);
-        }
+      if (status === 'loading') {
+        console.log('📡 Video loading...');
+        setIsBuffering(true);
+      }
 
-        if (status === 'readyToPlay') {
-          console.log('🎬 Ready to play');
-          setIsBuffering(false);
-        }
-      });
+      if (status === 'readyToPlay') {
+        console.log('🎬 Ready to play');
+        setIsBuffering(false);
+      }
+    });
 
       timeUpdateListener = player.addListener('timeUpdate', (payload) => {
         // Check if player is still valid in callback
@@ -464,7 +542,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
         lastTimeUpdate = now;
 
         if (payload && payload.currentTime !== undefined) {
-          setCurrentTime(payload.currentTime);
+      setCurrentTime(payload.currentTime);
 
           // Simplified buffer health calculation for VM
           try {
@@ -474,8 +552,8 @@ export default function VideoPlayerScreen({ route, navigation }) {
                 const bufferRatio = Math.min(95, (payload.currentTime / player.duration) * 100);
                 setBufferHealth(bufferRatio);
               } else {
-                const bufferRatio = (payload.currentTime / player.duration) * 100;
-                setBufferHealth(bufferRatio);
+        const bufferRatio = (payload.currentTime / player.duration) * 100;
+        setBufferHealth(bufferRatio);
               }
             }
           } catch (e) {
@@ -491,9 +569,9 @@ export default function VideoPlayerScreen({ route, navigation }) {
           return;
         }
         
-        console.log('📹 Video ended');
-        setShowControls(true);
-      });
+      console.log('📹 Video ended');
+      setShowControls(true);
+    });
 
       // Simplified listeners for VM
       if (!isLowPerformanceDevice()) {
@@ -504,8 +582,8 @@ export default function VideoPlayerScreen({ route, navigation }) {
             return;
           }
           
-          console.log('🔊 Volume changed');
-        });
+      console.log('🔊 Volume changed');
+    });
       }
 
     } catch (error) {
@@ -596,7 +674,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
             // Simpler seek for VM
             player.currentTime = currentPosition;
           } else {
-            player.seekBy(currentPosition - (player.currentTime || 0));
+          player.seekBy(currentPosition - (player.currentTime || 0));
           }
 
           // Resume playback if was playing
@@ -662,8 +740,8 @@ export default function VideoPlayerScreen({ route, navigation }) {
 
       // Set buffering state with timeout fallback
       const bufferTimeout = isLowPerformanceDevice() ? 2000 : 1000;
-      seekTimeoutRef.current = setTimeout(() => {
-        setIsBuffering(false);
+    seekTimeoutRef.current = setTimeout(() => {
+      setIsBuffering(false);
       }, bufferTimeout);
 
     } catch (error) {
@@ -798,23 +876,60 @@ export default function VideoPlayerScreen({ route, navigation }) {
     };
   }, []);
 
-  // ✨ Component cleanup useEffect (FIXED: now in correct location)
+  // ✨ Component cleanup useEffect (ENHANCED: better error handling)
   useEffect(() => {
     return () => {
       // Cleanup player on component unmount
       try {
-        if (player && typeof player === 'object' && !player._isReleased) {
-          console.log('🧹 Cleaning up VideoPlayer on component unmount');
+        console.log('🧹 Starting VideoPlayer cleanup process...');
+        
+        // Enhanced null and type checking
+        if (player && 
+            typeof player === 'object' && 
+            player !== null &&
+            !Number.isInteger(player) && // Prevent integer being passed as player
+            typeof player.pause === 'function') {
           
-          // Pause player before cleanup
-          if (player.playing) {
-            player.pause();
+          console.log('🧹 Valid player object found, proceeding with cleanup');
+          
+          // Safely pause player before cleanup
+          try {
+            if (player.playing === true) {
+              player.pause();
+              console.log('⏸️ Player paused during cleanup');
+            }
+          } catch (pauseError) {
+            console.warn('⚠️ Could not pause player during cleanup:', pauseError);
           }
           
-          console.log('✅ VideoPlayer cleanup completed');
+          // Clear any pending timeouts
+          if (seekTimeoutRef.current) {
+            clearTimeout(seekTimeoutRef.current);
+            seekTimeoutRef.current = null;
+          }
+          if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current);
+            retryTimeoutRef.current = null;
+          }
+          if (bufferCheckRef.current) {
+            clearInterval(bufferCheckRef.current);
+            bufferCheckRef.current = null;
+          }
+          if (hideControlsTimeout.current) {
+            clearTimeout(hideControlsTimeout.current);
+            hideControlsTimeout.current = null;
+          }
+          
+          console.log('✅ VideoPlayer cleanup completed successfully');
+        } else {
+          console.log('⚠️ Player object is invalid or already cleaned up');
+          if (player) {
+            console.log('🔍 Player type:', typeof player, 'Value:', player);
+          }
         }
       } catch (error) {
         console.error('❌ Error during VideoPlayer cleanup:', error);
+        // Don't re-throw - allow component to unmount gracefully
       }
     };
   }, []); // Empty dependency array - only run on unmount
@@ -848,7 +963,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
                   </Text>
                   <Text style={styles.netflixNetworkStatus}>
                     {networkInfo.isConnected ? '✅ Kết nối tốt' : '❌ Mất kết nối'}
-                  </Text>
+                      </Text>
                 </View>
             )}
 
@@ -869,21 +984,21 @@ export default function VideoPlayerScreen({ route, navigation }) {
                         <View style={styles.netflixQualityInfo}>
                           <Text style={styles.netflixQualityLabel}>{item.label}</Text>
                           <Text style={styles.netflixQualityDetails}>
-                            {item.resolution} • {item.bitrate}
-                            {item.frameRate !== 'Variable' && ` • ${item.frameRate}fps`}
-                          </Text>
+                          {item.resolution} • {item.bitrate}
+                          {item.frameRate !== 'Variable' && ` • ${item.frameRate}fps`}
+                        </Text>
                           {/* Netflix-style quality indicator */}
-                          {item.mobileScore > 0 && item.mobileScore < 30 && (
+                        {item.mobileScore > 0 && item.mobileScore < 30 && (
                               <View style={styles.netflixOptimizedBadge}>
                                 <Text style={styles.netflixOptimizedText}>MOBILE</Text>
                               </View>
-                          )}
-                        </View>
-                        {selectedQuality?.id === item.id && (
+                        )}
+                      </View>
+                      {selectedQuality?.id === item.id && (
                             <View style={styles.netflixCheckContainer}>
                               <Text style={styles.netflixCheckmark}>✓</Text>
                             </View>
-                        )}
+                      )}
                       </View>
                     </TouchableOpacity>
                 )}
@@ -1179,10 +1294,10 @@ export default function VideoPlayerScreen({ route, navigation }) {
             <ActivityIndicator size="large" color="#E50914" />
             <Text style={styles.netflixLoadingTitle}>
               {isBuffering ? 'Đang tải...' : 'Netflix'}
-            </Text>
+          </Text>
             <Text style={styles.netflixLoadingSubtitle}>
               {movieTitle}
-            </Text>
+              </Text>
           </View>
         </View>
     );
@@ -1200,7 +1315,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
 
             <TouchableOpacity style={styles.netflixRetryButton} onPress={initializePlayer}>
               <Text style={styles.netflixRetryText}>Thử lại</Text>
-            </TouchableOpacity>
+          </TouchableOpacity>
 
             <TouchableOpacity
                 style={styles.netflixBackToHomeButton}
@@ -1208,7 +1323,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
             >
               <Text style={styles.netflixBackToHomeText}>Quay lại</Text>
             </TouchableOpacity>
-          </View>
+              </View>
         </View>
     );
   }
@@ -1253,7 +1368,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
                     style={styles.topGradient}
                 >
                   <View style={styles.netflixTopControls}>
-                    <TouchableOpacity
+                  <TouchableOpacity
                         style={styles.netflixBackButton}
                         onPress={() => navigation.goBack()}
                     >
@@ -1263,7 +1378,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
                     <View style={styles.netflixTitleContainer}>
                       <Text style={styles.netflixTitle} numberOfLines={1}>
                         {movieTitle}
-                      </Text>
+                    </Text>
                     </View>
 
                     <View style={styles.netflixTopRightControls}>
@@ -1281,8 +1396,8 @@ export default function VideoPlayerScreen({ route, navigation }) {
                           onPress={() => setShowAdvancedMenu(true)}
                       >
                         <Text style={styles.netflixIconText}>⋮</Text>
-                      </TouchableOpacity>
-                    </View>
+                  </TouchableOpacity>
+                </View>
                   </View>
                 </LinearGradient>
 
@@ -1290,7 +1405,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
                 <View style={styles.netflixCenterControls}>
                   <View style={styles.netflixCenterButtonsRow}>
                     {/* Skip Backward */}
-                    <TouchableOpacity
+                  <TouchableOpacity
                         style={styles.netflixSkipButton}
                         onPress={() => skipBackward(10)}
                     >
@@ -1301,12 +1416,12 @@ export default function VideoPlayerScreen({ route, navigation }) {
                     {/* Main Play Button */}
                     <TouchableOpacity
                         style={styles.netflixPlayButton}
-                        onPress={togglePlayPause}
-                    >
+                      onPress={togglePlayPause}
+                  >
                       <View style={styles.netflixPlayButtonInner}>
                         <Text style={styles.netflixPlayIcon}>
                           {player?.playing ? '⏸' : '▶'}
-                        </Text>
+                    </Text>
                       </View>
                     </TouchableOpacity>
 
@@ -1317,7 +1432,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
                     >
                       <Text style={styles.netflixSkipIcon}>⏩</Text>
                       <Text style={styles.netflixSkipText}>10</Text>
-                    </TouchableOpacity>
+                  </TouchableOpacity>
                   </View>
                 </View>
 
@@ -1360,8 +1475,8 @@ export default function VideoPlayerScreen({ route, navigation }) {
                     <View style={styles.netflixProgressContainer}>
                       <View style={styles.netflixProgressBar}>
                         {/* Buffer Progress */}
-                        <View
-                            style={[
+                    <View
+                        style={[
                               styles.netflixBufferProgress,
                               {
                                 width: `${Math.min(bufferHealth, 100)}%`
@@ -1372,22 +1487,22 @@ export default function VideoPlayerScreen({ route, navigation }) {
                         <View
                             style={[
                               styles.netflixPlayProgress,
-                              {
-                                width: `${((currentTime || 0) / (duration || 1)) * 100}%`
-                              }
-                            ]}
-                        />
+                          {
+                            width: `${((currentTime || 0) / (duration || 1)) * 100}%`
+                          }
+                        ]}
+                    />
                         {/* Progress Thumb */}
-                        <View
-                            style={[
+                    <View
+                        style={[
                               styles.netflixProgressThumb,
-                              {
+                          {
                                 left: `${((currentTime || 0) / (duration || 1)) * 100}%`
-                              }
-                            ]}
-                        />
+                          }
+                        ]}
+                    />
                       </View>
-                    </View>
+                  </View>
 
                     {/* Enhanced Bottom Controls */}
                     <View style={styles.netflixBottomInfo}>
@@ -1431,8 +1546,8 @@ export default function VideoPlayerScreen({ route, navigation }) {
                             {volume === 0 ? '🔇' : '🔊'}
                           </Text>
                         </TouchableOpacity>
-                      </View>
-                    </View>
+                </View>
+              </View>
                   </View>
                 </LinearGradient>
               </Animated.View>

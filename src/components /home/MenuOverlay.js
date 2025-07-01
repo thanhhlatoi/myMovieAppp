@@ -155,17 +155,17 @@ const MenuOverlay = ({ visible, onSelect, onClose, navigation }) => {
 
                     {/* ✨ NETFLIX FEATURE: Menu Items */}
                     <View style={styles.menuList}>
-                        {menuItems.map(item => (
+                {menuItems.map(item => (
                             <NetflixMenuItem
-                                key={item.id}
-                                title={item.title}
+                        key={item.id}
+                        title={item.title}
                                 subtitle={item.subtitle}
                                 icon={item.icon}
                                 color={item.color}
                                 isLogout={item.isLogout}
-                                onPress={item.onPress}
-                            />
-                        ))}
+                        onPress={item.onPress}
+                    />
+                ))}
                     </View>
 
                     {/* ✨ NETFLIX FEATURE: App Version */}

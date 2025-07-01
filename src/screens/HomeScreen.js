@@ -9,16 +9,18 @@ import {
   Dimensions,
   StatusBar,
   Text,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import NetInfo from '@react-native-community/netinfo';
 
 // Import constants
-import { COLORS } from '../constants/Colors';
 import { FONTS } from '../constants/Fonts';
 // Import services
 import CategoryService from '../services/CategoryService';
 import VideoService from '../services/VideoService';
+import MovieService from '../services/MovieService';
 import AuthService from '../services/AuthService';
 
 // ⭐ FIXED: Đường dẫn import (bỏ khoảng trắng)
@@ -29,10 +31,8 @@ import ItemSeparator from '../components /common/ItemSeparator';
 
 import HeaderBar from '../components /home/HeaderBar';
 import HeroSection from '../components /home/HeroSection';
-import QuickAccessMenu from '../components /home/QuickAccessMenu';
 import GenreList from '../components /home/GenreList';
 import MovieList from '../components /home/MovieList';
-import StatsSection from '../components /home/StatsSection';
 import MenuOverlay from '../components /home/MenuOverlay';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -57,12 +57,22 @@ const HomeScreen = ({ navigation }) => {
   const [myList, setMyList] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
 
+  // ✨ NEW: Category-based content sections
+  const [moviesByCategory, setMoviesByCategory] = useState({});
+  const [popularMoviesByCategory, setPopularMoviesByCategory] = useState({});
+  const [loadingGenreMovies, setLoadingGenreMovies] = useState(false);
+
   // UI states
   const [menuVisible, setMenuVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [currentSection, setCurrentSection] = useState('home');
+  
+  // ✨ NEW: Search states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Animation refs
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -71,6 +81,9 @@ const HomeScreen = ({ navigation }) => {
 
   // Netflix-style auto-rotation for hero
   const heroRotationRef = useRef(null);
+  
+  // ✨ NEW: Search debounce ref
+  const searchTimeoutRef = useRef(null);
 
   // ✨ ENHANCED: Network monitoring
   useEffect(() => {
@@ -90,6 +103,9 @@ const HomeScreen = ({ navigation }) => {
       if (heroRotationRef.current) {
         clearInterval(heroRotationRef.current);
       }
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -100,7 +116,14 @@ const HomeScreen = ({ navigation }) => {
 
   useEffect(() => {
     filterMoviesByGenre();
-  }, [activeGenre, movies]);
+  }, [activeGenre, movies, moviesByCategory]);
+
+  // ✨ NEW: Fetch category movies when genres are loaded
+  useEffect(() => {
+    if (genres.length > 0 && movies.length > 0) {
+      fetchMoviesByCategories();
+    }
+  }, [genres]);
 
   // ✨ NEW: Handle favorites changes
   const handleFavoritesChange = useCallback((movieId, isFavorite) => {
@@ -214,14 +237,17 @@ const HomeScreen = ({ navigation }) => {
       setLoading(true);
       console.log("🔄 Starting data fetch...");
 
-      const [genresResponse, videosResponse] = await Promise.all([
+      // ✨ ENHANCED: Fetch both videos and movies from API
+      const [genresResponse, videosResponse, moviesResponse] = await Promise.all([
         CategoryService.getAllCategories(),
-        VideoService.getAllVideos(0, 20)
+        VideoService.getVideosWithMovieProduct(0, 20), // ✨ FILTERED: Only videos with movieProduct
+        MovieService.getAllMovies(0, 50) // Fetch more movies for better categorization
       ]);
 
       console.log("✅ API responses received");
       handleGenresData(genresResponse);
       handleVideosData(videosResponse);
+      await handleMoviesData(moviesResponse);
 
     } catch (error) {
       handleFetchError(error);
@@ -243,6 +269,78 @@ const HomeScreen = ({ navigation }) => {
     setVideos(videosData);
   };
 
+  // ✨ NEW: Handle movies data and fetch category-based content
+  const handleMoviesData = async (response) => {
+    const moviesData = response?.data?.content || [];
+    console.log("🎬 Movies loaded:", moviesData.length);
+    
+    // Set movies data
+    const processedMovies = moviesData.filter(Boolean);
+    setMovies(prevMovies => [...prevMovies, ...processedMovies]);
+
+    // ✨ ENHANCED: Fetch movies by category for each available genre
+    if (genres.length > 0) {
+      await fetchMoviesByCategories();
+    }
+  };
+
+  // ✨ NEW: Fetch movies by categories
+  const fetchMoviesByCategories = async () => {
+    try {
+      console.log("🎭 Fetching movies by categories...");
+      
+      const categoryPromises = genres.slice(0, 5).map(async (genre) => {
+        try {
+          // Fetch regular movies by category
+          const categoryMovies = await MovieService.getMoviesByCategory(genre.id);
+          
+          // Fetch popular movies by category
+          const popularMovies = await MovieService.getPopularMoviesByCategory(genre.id, 10);
+          
+          return {
+            categoryId: genre.id,
+            categoryName: genre.name,
+            movies: categoryMovies?.data || [],
+            popularMovies: popularMovies?.data || []
+          };
+        } catch (error) {
+          console.error(`❌ Error fetching movies for category ${genre.name}:`, error);
+          return {
+            categoryId: genre.id,
+            categoryName: genre.name,
+            movies: [],
+            popularMovies: []
+          };
+        }
+      });
+
+      const categoryResults = await Promise.all(categoryPromises);
+      
+      // Organize data by category
+      const moviesByCat = {};
+      const popularMoviesByCat = {};
+      
+      categoryResults.forEach(result => {
+        if (result.movies.length > 0) {
+          moviesByCat[result.categoryName] = result.movies;
+        }
+        if (result.popularMovies.length > 0) {
+          popularMoviesByCat[result.categoryName] = result.popularMovies;
+        }
+      });
+      
+      setMoviesByCategory(moviesByCat);
+      setPopularMoviesByCategory(popularMoviesByCat);
+      
+      console.log("✅ Category-based movies loaded:");
+      console.log("📊 Categories with movies:", Object.keys(moviesByCat).length);
+      console.log("📊 Categories with popular movies:", Object.keys(popularMoviesByCat).length);
+      
+    } catch (error) {
+      console.error("❌ Error fetching movies by categories:", error);
+    }
+  };
+
   const handleFetchError = (error) => {
     console.error("❌ Lỗi khi tải dữ liệu:", error);
     Alert.alert(
@@ -255,72 +353,115 @@ const HomeScreen = ({ navigation }) => {
     );
   };
 
-  // ✨ ENHANCED: Convert function với optimization
+  // ✨ ENHANCED: Convert function với strict movieProduct requirement
   const convertVideoToMovie = (video) => {
     if (!video) {
       console.warn("⚠️ Video is null/undefined in convertVideoToMovie");
       return null;
     }
 
-    console.log("🔄 Converting video:", video.id, video.movieProduct ? "has movieProduct" : "video-only");
-
-    // Nếu có movieProduct, ưu tiên sử dụng
-    if (video.movieProduct) {
-      const converted = {
-        ...video.movieProduct,
-        // Thêm thông tin từ video
-        _videoData: video,
-        _hasVideo: true,
-        _videoFilm: video.videoFilm,
-        _fileSize: video.fileSize,
-        _status: video.status,
-        _qualities: video.availableQualities,
-        _watchedAt: video.watchedAt
-      };
-      console.log("✅ Converted with movieProduct:", converted.id, converted.title);
-      return converted;
+    // ✨ STRICT FILTER: Only process videos with movieProduct
+    if (!video.movieProduct) {
+      console.warn(`⚠️ Video ID ${video.id} has no movieProduct - skipping conversion`);
+      return null;
     }
 
-    // Fallback: Tạo movie object từ video data
-    const fallbackMovie = {
-      id: video.id,
-      title: `Video ${video.id}`,
-      description: `Video được upload vào ${new Date(video.watchedAt).toLocaleDateString()}`,
-      imgMovie: null,
-      views: 0,
-      likes: 0,
-      time: 0,
-      year: new Date(video.watchedAt).getFullYear(),
-      // Video-specific data
+    console.log("🔄 Converting video:", video.id, "with movieProduct:", video.movieProduct.title);
+
+    // Convert với movieProduct data
+    const converted = {
+      ...video.movieProduct,
+      // Thêm thông tin từ video
       _videoData: video,
       _hasVideo: true,
-      _isVideoOnly: true,
       _videoFilm: video.videoFilm,
       _fileSize: video.fileSize,
       _status: video.status,
       _qualities: video.availableQualities,
       _watchedAt: video.watchedAt
     };
-
-    console.log("⚠️ Created fallback movie for video-only:", fallbackMovie.id, fallbackMovie.title);
-    return fallbackMovie;
+    
+    console.log("✅ Converted with movieProduct:", converted.id, converted.title);
+    return converted;
   };
 
-  // Filter movies by genre
-  const filterMoviesByGenre = () => {
+  // ✨ ENHANCED: Filter movies by genre using both API data and local data
+  const filterMoviesByGenre = async () => {
     if (activeGenre && activeGenre !== 'Tất cả') {
-      const filtered = movies.filter(movie => {
-        const movieCategories = movie.categories || [];
-        return movieCategories.some(cat =>
-          cat.name?.toLowerCase().includes(activeGenre.toLowerCase())
-        );
-      });
       console.log("🔍 Genre filter applied:", activeGenre);
-      console.log("🔍 Filtered movies:", filtered.length);
-      setFilteredMovies(filtered);
+      setLoadingGenreMovies(true);
+      
+      // ✨ NEW: First try to get movies from API by category
+      let filteredFromAPI = [];
+      
+      // Find the genre ID from genres list
+      const selectedGenre = genres.find(genre => 
+        genre.name?.toLowerCase() === activeGenre.toLowerCase()
+      );
+      
+      if (selectedGenre) {
+        try {
+          console.log(`🔍 Fetching movies for genre ID: ${selectedGenre.id}`);
+          const apiResponse = await MovieService.getMoviesByCategory(selectedGenre.id);
+          filteredFromAPI = apiResponse?.data || [];
+          console.log(`🔍 API returned ${filteredFromAPI.length} movies for ${activeGenre}`);
+        } catch (error) {
+          console.error("❌ Error fetching movies by category:", error);
+        }
+      }
+      
+      // ✨ FALLBACK: If API doesn't return results, filter from local movies
+      let filteredFromLocal = [];
+      if (filteredFromAPI.length === 0) {
+        filteredFromLocal = movies.filter(movie => {
+          const movieCategories = movie.categories || [];
+          return movieCategories.some(cat =>
+            cat.name?.toLowerCase().includes(activeGenre.toLowerCase())
+          );
+        });
+        console.log(`🔍 Local filter returned ${filteredFromLocal.length} movies for ${activeGenre}`);
+      }
+      
+      // ✨ ENHANCED: Also check moviesByCategory state
+      let filteredFromCategoryState = [];
+      if (moviesByCategory[activeGenre]) {
+        filteredFromCategoryState = moviesByCategory[activeGenre];
+        console.log(`🔍 Category state has ${filteredFromCategoryState.length} movies for ${activeGenre}`);
+      }
+      
+      // ✨ SMART MERGE: Combine results and remove duplicates
+      const allFilteredMovies = [
+        ...filteredFromAPI,
+        ...filteredFromLocal,
+        ...filteredFromCategoryState
+      ];
+      
+      // Remove duplicates based on movie ID
+      const uniqueMovies = allFilteredMovies.filter((movie, index, self) =>
+        index === self.findIndex(m => m.id === movie.id)
+      );
+      
+      console.log(`🔍 Final filtered result: ${uniqueMovies.length} unique movies for ${activeGenre}`);
+      setFilteredMovies(uniqueMovies);
+      setLoadingGenreMovies(false);
+      
     } else {
       console.log("🔍 No genre filter, showing all movies");
-      setFilteredMovies(movies);
+      
+      // ✨ ENHANCED: Show all movies from all sources
+      const allMoviesFromCategories = Object.values(moviesByCategory).flat();
+      const allMovies = [
+        ...movies,
+        ...allMoviesFromCategories
+      ];
+      
+      // Remove duplicates
+      const uniqueAllMovies = allMovies.filter((movie, index, self) =>
+        index === self.findIndex(m => m.id === movie.id)
+      );
+      
+      setFilteredMovies(uniqueAllMovies);
+      setLoadingGenreMovies(false);
     }
   };
 
@@ -330,39 +471,78 @@ const HomeScreen = ({ navigation }) => {
     fetchData();
   };
 
-  const handleGenreSelect = (genreName) => {
+  const handleGenreSelect = async (genreName) => {
     console.log("🎭 Genre selected:", genreName);
-    setActiveGenre(activeGenre === genreName ? null : genreName);
+    
+    // ✨ ENHANCED: Toggle logic - if same genre selected, show all movies
+    if (activeGenre === genreName) {
+      console.log("🎭 Deselecting genre, showing all movies");
+      setActiveGenre(null);
+    } else {
+      console.log(`🎭 Selecting new genre: ${genreName}`);
+      setActiveGenre(genreName);
+    }
   };
 
   const handleMoviePress = async (movieId) => {
     try {
       console.log("🎬 Opening movie/video with ID:", movieId);
 
-      // Tìm movie và video tương ứng
-      const movie = movies.find(m => m.id === movieId);
+      // ✨ ENHANCED: Track movie view
+      await MovieService.watchMovie(movieId);
+
+      // Tìm movie từ multiple sources
+      let movie = movies.find(m => m.id === movieId);
+      
+      // ✨ NEW: Also search in category-based movies
+      if (!movie) {
+        Object.values(moviesByCategory).forEach(categoryMovies => {
+          if (!movie) {
+            movie = categoryMovies.find(m => m.id === movieId);
+          }
+        });
+      }
+      
+      // ✨ NEW: Also search in popular movies by category
+      if (!movie) {
+        Object.values(popularMoviesByCategory).forEach(popularMovies => {
+          if (!movie) {
+            movie = popularMovies.find(m => m.id === movieId);
+          }
+        });
+      }
+
       const video = movie?._videoData;
 
       console.log("🎬 Found movie:", movie?.title);
       console.log("🎬 Found video:", video?.id);
 
-      if (movie && video) {
-        if (movie._isVideoOnly) {
-          console.log("🎬 Navigating to VideoPlayerScreen");
-          navigation.navigate("VideoPlayerScreen", {
-            videoId: video.id,
-            movie: movie,
-            movieTitle: movie.title
-          });
+      if (movie) {
+        if (video) {
+          if (movie._isVideoOnly) {
+            console.log("🎬 Navigating to VideoPlayerScreen");
+            navigation.navigate("VideoPlayerScreen", {
+              videoId: video.id,
+              movie: movie,
+              movieTitle: movie.title
+            });
+          } else {
+            console.log("🎬 Navigating to MovieScreen");
+            navigation.navigate("movie", {
+              movie: movie,
+              video: video
+            });
+          }
         } else {
-          console.log("🎬 Navigating to MovieScreen");
+          // Movie without video data - navigate to movie details
+          console.log("🎬 Navigating to MovieScreen (no video)");
           navigation.navigate("movie", {
-            movie: movie,
-            video: video
+            movie: movie
           });
         }
       } else {
-        console.warn("Movie or video not found for ID:", movieId);
+        console.warn("Movie not found for ID:", movieId);
+        Alert.alert("Lỗi", "Không tìm thấy phim này.");
       }
     } catch (error) {
       console.error("❌ Lỗi khi mở video:", error);
@@ -378,21 +558,135 @@ const HomeScreen = ({ navigation }) => {
 
   const handleSearchClose = () => {
     setSearchVisible(false);
-    console.log("🔍 Search deactivated");
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearching(false);
+    
+    // ✨ ENHANCED: Restore original filtered movies
+    if (!activeGenre) {
+      const allMoviesFromCategories = Object.values(moviesByCategory).flat();
+      const allMovies = [
+        ...movies,
+        ...allMoviesFromCategories
+      ];
+      
+      const uniqueAllMovies = allMovies.filter((movie, index, self) =>
+        index === self.findIndex(m => m.id === movie.id)
+      );
+      
+      setFilteredMovies(uniqueAllMovies);
+    }
+    
+    console.log("🔍 Search deactivated and cleared");
   };
 
-  const handleSearchChange = (query) => {
+  // ✨ ENHANCED: Comprehensive search function with debounce
+  const handleSearchChange = async (query) => {
     console.log("🔍 Search query:", query);
-    // Implement search logic here
+    setSearchQuery(query);
+    
+    // ✨ NEW: Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     if (query.trim()) {
-      const searchResults = movies.filter(movie =>
-        movie.title?.toLowerCase().includes(query.toLowerCase()) ||
-        movie.description?.toLowerCase().includes(query.toLowerCase())
-      );
-      setFilteredMovies(searchResults);
-      console.log("🔍 Search results:", searchResults.length);
+      // ✨ NEW: Debounce search to avoid too many API calls
+      searchTimeoutRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      
+      try {
+        // ✨ ENHANCED: Search in multiple sources
+        
+        // 1. Search from API
+        let apiResults = [];
+        try {
+          const apiResponse = await MovieService.searchMoviesByTitle(query);
+          apiResults = apiResponse?.data || [];
+          console.log(`🔍 API search returned ${apiResults.length} results`);
+        } catch (error) {
+          console.error("❌ API search error:", error);
+        }
+        
+        // 2. Search in local movies (from videos)
+        const localResults = movies.filter(movie =>
+          movie.title?.toLowerCase().includes(query.toLowerCase()) ||
+          movie.description?.toLowerCase().includes(query.toLowerCase())
+        );
+        console.log(`🔍 Local search returned ${localResults.length} results`);
+        
+        // 3. Search in moviesByCategory
+        const categoryResults = [];
+        Object.values(moviesByCategory).forEach(categoryMovies => {
+          const filtered = categoryMovies.filter(movie =>
+            movie.title?.toLowerCase().includes(query.toLowerCase()) ||
+            movie.description?.toLowerCase().includes(query.toLowerCase())
+          );
+          categoryResults.push(...filtered);
+        });
+        console.log(`🔍 Category search returned ${categoryResults.length} results`);
+        
+        // 4. Search in popularMoviesByCategory
+        const popularResults = [];
+        Object.values(popularMoviesByCategory).forEach(popularMovies => {
+          const filtered = popularMovies.filter(movie =>
+            movie.title?.toLowerCase().includes(query.toLowerCase()) ||
+            movie.description?.toLowerCase().includes(query.toLowerCase())
+          );
+          popularResults.push(...filtered);
+        });
+        console.log(`🔍 Popular search returned ${popularResults.length} results`);
+        
+        // ✨ SMART MERGE: Combine all results and remove duplicates
+        const allResults = [
+          ...apiResults,
+          ...localResults,
+          ...categoryResults,
+          ...popularResults
+        ];
+        
+        // Remove duplicates based on movie ID
+        const uniqueResults = allResults.filter((movie, index, self) =>
+          index === self.findIndex(m => m.id === movie.id)
+        );
+        
+        console.log(`🔍 Final search results: ${uniqueResults.length} unique movies`);
+        
+        setSearchResults(uniqueResults);
+        setFilteredMovies(uniqueResults);
+        
+        // ✨ NEW: Clear active genre when searching
+        if (activeGenre) {
+          setActiveGenre(null);
+        }
+        
+      } catch (error) {
+        console.error("❌ Search error:", error);
+        setSearchResults([]);
+        setFilteredMovies([]);
+             } finally {
+         setIsSearching(false);
+       }
+      }, 500); // Debounce 500ms
     } else {
-      setFilteredMovies(movies);
+      // ✨ ENHANCED: Clear search - restore original state
+      console.log("🔍 Clearing search, restoring original state");
+      setSearchResults([]);
+      setIsSearching(false);
+      
+      // Restore to all movies from all sources
+      const allMoviesFromCategories = Object.values(moviesByCategory).flat();
+      const allMovies = [
+        ...movies,
+        ...allMoviesFromCategories
+      ];
+      
+      // Remove duplicates
+      const uniqueAllMovies = allMovies.filter((movie, index, self) =>
+        index === self.findIndex(m => m.id === movie.id)
+      );
+      
+      setFilteredMovies(uniqueAllMovies);
     }
   };
 
@@ -552,7 +846,14 @@ const HomeScreen = ({ navigation }) => {
   console.log("📊 Movies:", movies.length);
   console.log("📊 Filtered Movies:", filteredMovies.length);
   console.log("📊 Hero Movies:", heroMovies.length);
+  console.log("📊 Active Genre:", activeGenre);
   console.log("📊 Loading:", loading);
+  console.log("📊 Loading Genre Movies:", loadingGenreMovies);
+  console.log("📊 Search Query:", searchQuery);
+  console.log("📊 Search Results:", searchResults.length);
+  console.log("📊 Is Searching:", isSearching);
+  console.log("📊 Movies by Category:", Object.keys(moviesByCategory).length);
+  console.log("📊 Popular Movies by Category:", Object.keys(popularMoviesByCategory).length);
 
   // ✨ NETFLIX FEATURE: Enhanced loading screen
   if (loading) {
@@ -638,17 +939,7 @@ const HomeScreen = ({ navigation }) => {
               />
           )}
 
-          {/* ✨ NETFLIX FEATURE: Quick Access Menu */}
-          <QuickAccessMenu
-              navigation={navigation}
-              onTrendingPress={() => console.log("Trending")}
-              onTopRatedPress={() => console.log("Top Rated")}
-              onFavoritesPress={() => {
-                console.log("🎬 Navigating to Favorites");
-                navigation.navigate('FavoritesScreen');
-              }}
-              onHistoryPress={() => console.log("History")}
-          />
+          
 
           {/* ✨ NETFLIX FEATURE: Continue Watching Section */}
           {continueWatching.length > 0 && (
@@ -670,11 +961,25 @@ const HomeScreen = ({ navigation }) => {
 
           {/* ✨ NETFLIX FEATURE: Genres Section */}
           <SectionContainer>
-            <SectionTitle
-                title="🎭 Thể loại"
-                subtitle={`${genres.length} thể loại`}
-                icon="category"
-            />
+            <View style={styles.sectionTitleWithButton}>
+              <View style={styles.titleSection}>
+                <View style={styles.titleContainer}>
+                  <Ionicons name="library-music" size={24} color="#E50914" style={styles.titleIcon} />
+                  <Text style={styles.mainTitle}>🎭 Thể loại</Text>
+                </View>
+                <Text style={styles.subtitle}>{genres.length} thể loại</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.seeAllButton}
+                onPress={() => navigation.navigate('AllMoviesScreen', { 
+                  title: 'Tất cả phim',
+                  initialGenre: null 
+                })}
+              >
+                <Text style={styles.seeAllButtonText}>Tất cả phim</Text>
+                <Ionicons name="chevron-forward" size={16} color="#E50914" />
+              </TouchableOpacity>
+            </View>
             <GenreList
                 genres={genres}
                 activeGenre={activeGenre}
@@ -682,29 +987,113 @@ const HomeScreen = ({ navigation }) => {
             />
           </SectionContainer>
 
-          {/* ✨ NETFLIX FEATURE: Main Content Section */}
+          {/* ✨ ENHANCED: Main Content Section - Shows search results, filtered movies, or popular content */}
           <SectionContainer>
-            <SectionTitle
-                title={activeGenre ? `🎬 ${activeGenre}` : "🔥 Nội dung phổ biến"}
-                subtitle={`${filteredMovies.length} video`}
-                icon="play-circle-filled"
-            />
-            <MovieList
-                movies={filteredMovies}
-                handleMoviePress={handleMoviePress}
-                onFavoritesChange={handleFavoritesChange}
-                layout="grid"
-            />
+            <View style={styles.sectionTitleWithButton}>
+              <View style={styles.titleSection}>
+                <View style={styles.titleContainer}>
+                  <Ionicons 
+                    name={
+                      searchQuery 
+                        ? "search" 
+                        : activeGenre 
+                          ? "film" 
+                          : "flame"
+                    } 
+                    size={24} 
+                    color="#E50914" 
+                    style={styles.titleIcon} 
+                  />
+                  <Text style={styles.mainTitle}>
+                    {searchQuery 
+                      ? `🔍 Kết quả tìm kiếm: "${searchQuery}"` 
+                      : activeGenre 
+                        ? `🎬 Phim ${activeGenre}` 
+                        : "🔥 Nội dung phổ biến"
+                    }
+                  </Text>
+                </View>
+                <Text style={styles.subtitle}>
+                  {searchQuery 
+                    ? `${filteredMovies.length} kết quả tìm thấy`
+                    : activeGenre 
+                      ? `${filteredMovies.length} phim ${activeGenre.toLowerCase()}` 
+                      : `${filteredMovies.length} video`
+                  }
+                </Text>
+              </View>
+              {/* ✨ NEW: See All Button */}
+              {!searchQuery && (
+                <TouchableOpacity
+                  style={styles.seeAllButton}
+                  onPress={() => navigation.navigate('AllMoviesScreen', { 
+                    title: activeGenre ? `Phim ${activeGenre}` : 'Tất cả phim',
+                    initialGenre: activeGenre 
+                  })}
+                >
+                  <Text style={styles.seeAllButtonText}>Xem tất cả</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#E50914" />
+                </TouchableOpacity>
+              )}
+            </View>
+            {isSearching || loadingGenreMovies ? (
+              <View style={styles.emptyState}>
+                <LoadingSpinner 
+                  message={
+                    isSearching 
+                      ? `Đang tìm kiếm "${searchQuery}"...` 
+                      : `Đang tải phim ${activeGenre}...`
+                  } 
+                />
+              </View>
+            ) : filteredMovies.length > 0 ? (
+              <MovieList
+                  movies={filteredMovies}
+                  handleMoviePress={handleMoviePress}
+                  onFavoritesChange={handleFavoritesChange}
+                  layout="grid"
+              />
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>
+                  {searchQuery 
+                    ? `Không tìm thấy phim nào với từ khóa "${searchQuery}"` 
+                    : activeGenre 
+                      ? `Không có phim nào trong thể loại "${activeGenre}"` 
+                      : "Đang tải nội dung..."
+                  }
+                </Text>
+                {searchQuery && (
+                  <Text style={styles.emptyStateSubtext}>
+                    Thử tìm kiếm với từ khóa khác hoặc kiểm tra chính tả
+                  </Text>
+                )}
+              </View>
+            )}
           </SectionContainer>
 
-          {/* ✨ NETFLIX FEATURE: Trending Section */}
-          {trending.length > 0 && (
+          {/* ✨ ENHANCED: Show trending only when not searching */}
+          {!searchQuery && trending.length > 0 && (
               <SectionContainer>
-                <SectionTitle
-                    title="🔥 Trending ngay bây giờ"
-                    subtitle={`${trending.length} video`}
-                    icon="trending-up"
-                />
+                <View style={styles.sectionTitleWithButton}>
+                  <View style={styles.titleSection}>
+                    <View style={styles.titleContainer}>
+                      <Ionicons name="trending-up" size={24} color="#E50914" style={styles.titleIcon} />
+                      <Text style={styles.mainTitle}>🔥 Trending ngay bây giờ</Text>
+                    </View>
+                    <Text style={styles.subtitle}>{trending.length} video</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.seeAllButton}
+                    onPress={() => navigation.navigate('AllMoviesScreen', { 
+                      title: 'Phim Trending',
+                      initialGenre: null 
+                    })}
+                  >
+                    <Text style={styles.seeAllButtonText}>Xem tất cả</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#E50914" />
+                  </TouchableOpacity>
+                </View>
                 <MovieList
                     movies={trending}
                     handleMoviePress={handleMoviePress}
@@ -716,7 +1105,7 @@ const HomeScreen = ({ navigation }) => {
           )}
 
           {/* ✨ NETFLIX FEATURE: New & Popular Section */}
-          {newAndPopular.length > 0 && (
+          {/* {newAndPopular.length > 0 && (
               <SectionContainer>
                 <SectionTitle
                     title="🆕 Mới & Phổ biến"
@@ -731,16 +1120,30 @@ const HomeScreen = ({ navigation }) => {
                     showDateAdded={true}
                 />
               </SectionContainer>
-          )}
+          )} */}
 
-          {/* ✨ NETFLIX FEATURE: Recommendations Section */}
-          {recommendations.length > 0 && (
+          {/* ✨ ENHANCED: Show recommendations only when not searching */}
+          {!searchQuery && recommendations.length > 0 && (
               <SectionContainer>
-                <SectionTitle
-                    title="💡 Đề xuất cho bạn"
-                    subtitle={`${recommendations.length} video`}
-                    icon="recommend"
-                />
+                <View style={styles.sectionTitleWithButton}>
+                  <View style={styles.titleSection}>
+                    <View style={styles.titleContainer}>
+                      <Ionicons name="bulb" size={24} color="#E50914" style={styles.titleIcon} />
+                      <Text style={styles.mainTitle}>💡 Đề xuất cho bạn</Text>
+                    </View>
+                    <Text style={styles.subtitle}>{recommendations.length} video</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.seeAllButton}
+                    onPress={() => navigation.navigate('AllMoviesScreen', { 
+                      title: 'Phim đề xuất',
+                      initialGenre: null 
+                    })}
+                  >
+                    <Text style={styles.seeAllButtonText}>Xem tất cả</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#E50914" />
+                  </TouchableOpacity>
+                </View>
                 <MovieList
                     movies={recommendations}
                     handleMoviePress={handleMoviePress}
@@ -750,12 +1153,73 @@ const HomeScreen = ({ navigation }) => {
               </SectionContainer>
           )}
 
-          {/* ✨ NETFLIX FEATURE: Enhanced Stats Section */}
-          <StatsSection
-            movies={movies}
-            videos={videos}
-            networkInfo={networkInfo}
-          />
+          {/* ✨ ENHANCED: Show category sections only when no specific genre is selected and not searching */}
+          {!activeGenre && !searchQuery && (
+            <>
+              {/* ✨ NEW: Movies by Category Sections */}
+              {Object.entries(moviesByCategory).map(([categoryName, categoryMovies]) => (
+                  <SectionContainer key={`category-${categoryName}`}>
+                    <View style={styles.sectionTitleWithButton}>
+                      <View style={styles.titleSection}>
+                        <View style={styles.titleContainer}>
+                          <Ionicons name="library-music" size={24} color="#E50914" style={styles.titleIcon} />
+                          <Text style={styles.mainTitle}>🎭 {categoryName}</Text>
+                        </View>
+                        <Text style={styles.subtitle}>{categoryMovies.length} phim</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.seeAllButton}
+                        onPress={() => navigation.navigate('AllMoviesScreen', { 
+                          title: `Phim ${categoryName}`,
+                          initialGenre: categoryName 
+                        })}
+                      >
+                        <Text style={styles.seeAllButtonText}>Xem tất cả</Text>
+                        <Ionicons name="chevron-forward" size={16} color="#E50914" />
+                      </TouchableOpacity>
+                    </View>
+                    <MovieList
+                        movies={categoryMovies}
+                        handleMoviePress={handleMoviePress}
+                        onFavoritesChange={handleFavoritesChange}
+                        horizontal={true}
+                    />
+                  </SectionContainer>
+              ))}
+
+              {/* ✨ NEW: Popular Movies by Category Sections */}
+              {Object.entries(popularMoviesByCategory).map(([categoryName, popularMovies]) => (
+                  <SectionContainer key={`popular-${categoryName}`}>
+                    <View style={styles.sectionTitleWithButton}>
+                      <View style={styles.titleSection}>
+                        <View style={styles.titleContainer}>
+                          <Ionicons name="trending-up" size={24} color="#E50914" style={styles.titleIcon} />
+                          <Text style={styles.mainTitle}>🔥 {categoryName} Phổ biến</Text>
+                        </View>
+                        <Text style={styles.subtitle}>{popularMovies.length} phim hot</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.seeAllButton}
+                        onPress={() => navigation.navigate('AllMoviesScreen', { 
+                          title: `${categoryName} Phổ biến`,
+                          initialGenre: categoryName 
+                        })}
+                      >
+                        <Text style={styles.seeAllButtonText}>Xem tất cả</Text>
+                        <Ionicons name="chevron-forward" size={16} color="#E50914" />
+                      </TouchableOpacity>
+                    </View>
+                    <MovieList
+                        movies={popularMovies}
+                        handleMoviePress={handleMoviePress}
+                        onFavoritesChange={handleFavoritesChange}
+                        horizontal={true}
+                        showRanking={true}
+                    />
+                  </SectionContainer>
+              ))}
+            </>
+          )}
 
           <ItemSeparator height={100} />
         </Animated.ScrollView>
@@ -824,6 +1288,79 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     paddingTop: 0,
+  },
+
+  // ✨ NEW: Empty state styles
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 200,
+  },
+  emptyStateText: {
+    color: '#ccc',
+    fontSize: 16,
+    textAlign: 'center',
+    fontFamily: FONTS.REGULAR,
+    lineHeight: 24,
+  },
+  emptyStateSubtext: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+    fontFamily: FONTS.REGULAR,
+    lineHeight: 20,
+    marginTop: 8,
+  },
+
+  // ✨ NEW: Section title with button styles
+  sectionTitleWithButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    marginBottom: 15,
+  },
+  titleSection: {
+    flex: 1,
+    marginRight: 15,
+  },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  titleIcon: {
+    marginRight: 10,
+  },
+  mainTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    fontFamily: FONTS.BOLD,
+    flex: 1,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#ccc',
+    fontFamily: FONTS.REGULAR,
+  },
+  seeAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(229, 9, 20, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#E50914',
+  },
+  seeAllButtonText: {
+    color: '#E50914',
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: FONTS.MEDIUM,
+    marginRight: 4,
   },
 });
 
