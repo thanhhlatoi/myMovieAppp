@@ -1,11 +1,12 @@
 // 📄 src/services/ProfileService.js - User Profile Management Service
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG, DEBUG_CONFIG } from '../config/apiConfig';
+import { AuthService } from './AuthService';
 
 class ProfileService {
     constructor() {
         this.baseUrl = API_CONFIG.BASE_URL;
-        this.profileEndpoint = `${this.baseUrl}/user/profile`;
+        this.profileEndpoint = `${this.baseUrl}/profile`;
     }
 
     // Helper method to log API calls
@@ -94,14 +95,28 @@ class ProfileService {
     async getCurrentProfile() {
         try {
             const url = `${this.profileEndpoint}`;
+            this.log('Getting current profile from:', url);
+            
             const response = await this.makeAuthenticatedRequest(url);
+            this.log('Profile response received:', response);
 
+            // Extract actual user data from ResponseBuilder format
+            const userData = response.body || response.data || response;
+            
             // Update stored user data with fresh info
-            await this.updateStoredUserData(response);
+            await this.updateStoredUserData(userData);
 
-            return this.formatUserProfile(response);
+            return this.formatUserProfile(userData);
         } catch (error) {
             console.error('Error getting current profile:', error);
+            
+            // Fallback to cached data if API fails
+            const cachedData = await this.getCurrentUserData();
+            if (cachedData) {
+                this.log('Using cached profile data');
+                return this.formatUserProfile(cachedData);
+            }
+            
             throw error;
         }
     }
@@ -109,17 +124,70 @@ class ProfileService {
     // Update user profile
     async updateProfile(profileData) {
         try {
-            const url = `${this.profileEndpoint}/update`;
-            const response = await this.makeAuthenticatedRequest(url, {
+            const token = await this.getAuthToken();
+            if (!token) {
+                throw new Error('Không tìm thấy token xác thực');
+            }
+
+            console.log('📤 Profile update data:', profileData);
+
+            // Use JSON endpoint instead of FormData
+            const jsonData = {
+                firstName: '',
+                lastName: '',
+                phoneNumber: profileData.phone || '',
+                dateOfBirth: null,
+                address: profileData.country || '',
+                gender: false
+            };
+
+            // Map frontend fields to backend fields
+            if (profileData.fullName) {
+                const nameParts = profileData.fullName.trim().split(' ');
+                jsonData.firstName = nameParts[0] || '';
+                jsonData.lastName = nameParts.slice(1).join(' ') || '';
+            }
+
+            if (profileData.dateOfBirth) {
+                const date = new Date(profileData.dateOfBirth);
+                jsonData.dateOfBirth = date.toISOString().split('T')[0];
+            }
+
+            if (profileData.gender !== undefined && profileData.gender !== '') {
+                jsonData.gender = profileData.gender === 'Nam';
+            }
+
+            console.log('📤 Sending JSON data:', jsonData);
+
+            const url = `${API_CONFIG.BASE_URL}/user/profile/update-json`;
+            const response = await fetch(url, {
                 method: 'PUT',
-                body: JSON.stringify(profileData)
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(jsonData),
             });
 
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('❌ Backend error response:', response.status, errorData);
+                throw new Error(errorData.message || errorData.error || `HTTP ${response.status}: Cập nhật thất bại`);
+            }
+
+            const result = await response.json();
+            
+            // Handle ResponseBuilder format
+            let profileResult = result;
+            if (result.code === 200 && result.result) {
+                profileResult = result.result;
+            }
+
             // Update stored user data
-            await this.updateStoredUserData(response);
+            await this.updateStoredUserData(profileResult);
 
             this.log('Profile updated successfully');
-            return this.formatUserProfile(response);
+            return this.formatUserProfile(profileResult);
         } catch (error) {
             console.error('Error updating profile:', error);
             throw error;
@@ -129,17 +197,34 @@ class ProfileService {
     // Change password
     async changePassword(currentPassword, newPassword) {
         try {
-            const url = `${this.profileEndpoint}/change-password`;
-            const response = await this.makeAuthenticatedRequest(url, {
+            const token = await this.getAuthToken();
+            if (!token) {
+                throw new Error('Không tìm thấy token xác thực');
+            }
+
+            const url = `${API_CONFIG.BASE_URL}/user/profile/change-password`;
+            const response = await fetch(url, {
                 method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
                 body: JSON.stringify({
                     currentPassword,
-                    newPassword
-                })
+                    newPassword,
+                    confirmPassword: newPassword
+                }),
             });
 
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || errorData.error || 'Đổi mật khẩu thất bại');
+            }
+
+            const result = await response.json();
+
             this.log('Password changed successfully');
-            return response;
+            return result;
         } catch (error) {
             console.error('Error changing password:', error);
             throw error;
@@ -152,20 +237,23 @@ class ProfileService {
     async uploadAvatar(imageUri) {
         try {
             const token = await this.getAuthToken();
-            const formData = new FormData();
+            if (!token) {
+                throw new Error('Không tìm thấy token xác thực');
+            }
 
+            const formData = new FormData();
             formData.append('avatar', {
                 uri: imageUri,
                 type: 'image/jpeg',
                 name: 'avatar.jpg'
             });
 
-            const url = `${this.profileEndpoint}/avatar`;
+            const url = `${API_CONFIG.BASE_URL}/user/profile/avatar`;
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'multipart/form-data',
-                    ...(token && { 'Authorization': `Bearer ${token}` })
+                    'Authorization': `Bearer ${token}`,
+                    // Don't set Content-Type for FormData
                 },
                 body: formData
             });
@@ -177,11 +265,17 @@ class ProfileService {
 
             const result = await response.json();
 
+            // Handle ResponseBuilder format
+            let avatarResult = result;
+            if (result.code === 200 && result.result) {
+                avatarResult = result.result;
+            }
+
             // Update stored user data with new avatar
-            await this.updateStoredUserData({ avatar: result.avatarUrl });
+            await this.updateStoredUserData({ profilePictureUrl: avatarResult.avatarUrl });
 
             this.log('Avatar uploaded successfully');
-            return result;
+            return avatarResult;
         } catch (error) {
             console.error('Error uploading avatar:', error);
             throw error;
@@ -250,38 +344,69 @@ class ProfileService {
     // ===================== USER STATISTICS & ACTIVITY =====================
 
     // Get user viewing statistics
-    async getUserStats() {
-        try {
-            const url = `${this.profileEndpoint}/statistics`;
-            const response = await this.makeAuthenticatedRequest(url);
+    // async getUserStats() {
+    //     try {
+    //         // Get current user data
+    //         const userData = await this.getCurrentUserData();
+    //         if (!userData || !userData.id) {
+    //             throw new Error('User not logged in');
+    //         }
 
-            return this.formatUserStats(response);
-        } catch (error) {
-            console.error('Error getting user stats:', error);
-            throw error;
-        }
-    }
+    //         // Use the user-specific endpoint for statistics
+    //         const url = `${this.baseUrl}/user/statistics/${userData.id}`;
+            
+    //         this.log('Getting user stats from:', url);
+            
+    //         const response = await this.makeAuthenticatedRequest(url);
+    //         this.log('Stats response:', response);
+
+    //         // If no data, return default stats
+    //         if (!response || !response.body) {
+    //             return {
+    //                 totalMoviesWatched: 0,
+    //                 totalWatchTime: 0,
+    //                 favoriteGenres: [],
+    //                 reviewsCount: 0,
+    //                 avgRating: 0,
+    //                 watchStreak: 0
+    //             };
+    //         }
+
+    //         return this.formatUserStats(response);
+    //     } catch (error) {
+    //         console.error('Error getting user stats:', error);
+    //         // Return default stats instead of throwing error
+    //         return {
+    //             totalMoviesWatched: 0,
+    //             totalWatchTime: 0,
+    //             favoriteGenres: [],
+    //             reviewsCount: 0,
+    //             avgRating: 0,
+    //             watchStreak: 0
+    //         };
+    //     }
+    // }
 
     // Get user activity
-    async getUserActivity(page = 0, size = 20) {
-        try {
-            const queryParams = new URLSearchParams({
-                page: page.toString(),
-                size: size.toString()
-            });
+    // async getUserActivity(page = 0, size = 20) {
+    //     try {
+    //         const queryParams = new URLSearchParams({
+    //             page: page.toString(),
+    //             size: size.toString()
+    //         });
 
-            const url = `${this.profileEndpoint}/activity?${queryParams}`;
-            const response = await this.makeAuthenticatedRequest(url);
+    //         const url = `${this.profileEndpoint}/activity?${queryParams}`;
+    //         const response = await this.makeAuthenticatedRequest(url);
 
-            return {
-                ...response,
-                content: response.content?.map(item => this.formatActivityItem(item)) || []
-            };
-        } catch (error) {
-            console.error('Error getting user activity:', error);
-            throw error;
-        }
-    }
+    //         return {
+    //             ...response,
+    //             content: response.content?.map(item => this.formatActivityItem(item)) || []
+    //         };
+    //     } catch (error) {
+    //         console.error('Error getting user activity:', error);
+    //         throw error;
+    //     }
+    // }
 
     // Get user viewing history (compatibility method)
     async getViewingHistory(page = 0, size = 20) {
@@ -382,22 +507,55 @@ class ProfileService {
 
     // Format user profile response
     formatUserProfile(apiResponse) {
+        // Handle different response formats
+        const data = apiResponse.body || apiResponse.data || apiResponse;
+        
+        // Format date of birth
+        let formattedDateOfBirth = null;
+        if (data.dateOfBirth) {
+            try {
+                formattedDateOfBirth = new Date(data.dateOfBirth).toISOString();
+            } catch (e) {
+                console.error('Error formatting date of birth:', e);
+            }
+        }
+
+        // Format join date
+        let formattedJoinDate = null;
+        if (data.createdAt || data.joinDate) {
+            try {
+                formattedJoinDate = new Date(data.createdAt || data.joinDate).toISOString();
+            } catch (e) {
+                console.error('Error formatting join date:', e);
+            }
+        }
+
+        // Construct full name
+        const firstName = data.firstName || '';
+        const lastName = data.lastName || '';
+        const fullName = [firstName, lastName].filter(Boolean).join(' ') || data.fullName || data.username || data.name || 'User';
+        
         return {
-            id: apiResponse.id,
-            email: apiResponse.email,
-            fullName: apiResponse.fullName || apiResponse.username,
-            username: apiResponse.username,
-            avatar: apiResponse.avatar,
-            bio: apiResponse.bio || '',
-            dateOfBirth: apiResponse.dateOfBirth,
-            gender: apiResponse.gender,
-            country: apiResponse.country,
-            phone: apiResponse.phone,
-            isVerified: apiResponse.isVerified || false,
-            joinDate: apiResponse.createdAt,
-            lastLogin: apiResponse.lastLogin,
-            preferences: apiResponse.preferences || {},
-            notificationSettings: apiResponse.notificationSettings || {}
+            id: data.id,
+            email: data.email,
+            name: fullName,
+            fullName: fullName,
+            username: data.username || data.email,
+            avatar: data.profilePictureUrl || data.avatar,
+            bio: data.bio || '',
+            dateOfBirth: formattedDateOfBirth,
+            gender: data.gender === true ? 'Nam' : (data.gender === false ? 'Nữ' : 'Chưa cập nhật'),
+            country: data.address || data.country || 'Chưa cập nhật',
+            phone: data.phoneNumber || data.phone || 'Chưa cập nhật',
+            isVerified: data.verified || data.isVerified || false,
+            joinDate: formattedJoinDate || new Date().toISOString(),
+            lastLogin: data.lastLogin,
+            preferences: data.preferences || {},
+            notificationSettings: data.notificationSettings || {},
+            firstName: firstName,
+            lastName: lastName,
+            active: data.active || true,
+            coverImage: data.coverImage || 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80'
         };
     }
 
@@ -440,7 +598,8 @@ class ProfileService {
             if (avatar.startsWith('http')) {
                 return avatar;
             }
-            return `${this.baseUrl}/api/user/profile/avatar/view?path=${avatar}`;
+            // Backend serves files through MinIO, usually already has full URL
+            return `${API_CONFIG.BASE_URL}/files/avatar/${avatar}`;
         }
 
         // Generate placeholder avatar

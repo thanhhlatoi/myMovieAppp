@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 // Development configurations
 const DEVELOPMENT_CONFIG = {
     // Updated to use the current server IP
-    BASE_URL: 'http://172.20.10.7:8082/api',
+    BASE_URL: 'http://192.168.100.193:8082/api',
     TIMEOUT: 30000, // 30 seconds
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000, // 1 second
@@ -82,6 +82,7 @@ export const ENDPOINTS = {
     // Users
     USERS: '/users',
     USER_PROFILE: (userId) => `/users/${userId}`,
+    PROFILE: '/profile',
     
     // Health
     HEALTH: '/health',

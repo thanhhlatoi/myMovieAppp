@@ -206,17 +206,33 @@ class FavoriteService {
     // Check if movie is favorite
     async checkIsFavorite(movieId, userId = null) {
         try {
+            // Try to get current user ID
             const targetUserId = userId || await this.getCurrentUserId();
+            
+            // If no user ID, try to fix user data
             if (!targetUserId) {
-                throw new Error('User ID not found');
+                const AuthService = require('./AuthService').default;
+                const fixedUserData = await AuthService.fixUserData();
+                if (fixedUserData && fixedUserData.id) {
+                    return this.checkIsFavorite(movieId, fixedUserData.id);
+                }
+                // If still no user ID, return false instead of throwing error
+                return false;
             }
 
             const url = `${this.favoritesEndpoint}/check/${targetUserId}/${movieId}`;
-            const response = await this.makeAuthenticatedRequest(url);
-            return response.isFavorite;
+            try {
+                const response = await this.makeAuthenticatedRequest(url);
+                return response.isFavorite;
+            } catch (apiError) {
+                console.log('API error checking favorite:', apiError);
+                // If API call fails, return false instead of throwing error
+                return false;
+            }
         } catch (error) {
             console.error('Error checking favorite status:', error);
-            throw error;
+            // Return false instead of throwing error
+            return false;
         }
     }
 

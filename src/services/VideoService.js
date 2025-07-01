@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://172.20.10.7:8082/api/videos";
+const API_BASE_URL = "http://192.168.100.193:8082/api/videos";
 
 const VideoService = {
     getAllVideos: async (page = 0, size = 5, sortBy = "id", order = "desc") => {

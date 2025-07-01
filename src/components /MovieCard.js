@@ -64,7 +64,7 @@ const MovieCard = ({ movie = {}, heartLess = true, onPress, style }) => {
 
   // Xử lý URL ảnh từ API của bạn
   const imageUri = movie.imgMovie
-      ? `http://172.20.10.7:8082/api/videos/view?bucketName=thanh&path=${movie.imgMovie}`
+      ? `http://192.168.100.193:8082/api/videos/view?bucketName=thanh&path=${movie.imgMovie}`
       : 'https://via.placeholder.com/300x450/333333/FFFFFF?text=No+Image';
 
   // Lấy thể loại đầu tiên từ genres array

@@ -69,19 +69,41 @@ const ProfileScreen = ({ navigation }) => {
     });
 
     useEffect(() => {
-        loadProfileData();
+        initializeProfile();
     }, []);
+
+    const initializeProfile = async () => {
+        try {
+            // Import và fix user data nếu cần
+            const AuthService = require('../services/AuthService').default;
+            await AuthService.fixUserData();
+            
+            // Load profile data
+            await loadProfileData();
+        } catch (error) {
+            console.error('Error initializing profile:', error);
+            // Still try to load profile data
+            await loadProfileData();
+        }
+    };
 
     const loadProfileData = async () => {
         try {
             setLoading(true);
-            const [profileData, statsData] = await Promise.all([
-                ProfileService.getCurrentProfile(),
-                ProfileService.getUserStats().catch(() => null) // Don't fail if stats not available
-            ]);
             
+            // Load profile data first
+            const profileData = await ProfileService.getCurrentProfile();
             setProfile(profileData);
-            setUserStats(statsData);
+            
+            // Try to load stats separately
+            try {
+                const statsData = await ProfileService.getUserStats();
+                setUserStats(statsData);
+            } catch (statsError) {
+                console.log('Non-critical error loading stats:', statsError);
+                // Don't show error alert for stats failure
+                setUserStats(null);
+            }
         } catch (error) {
             console.error('Error loading profile data:', error);
             Alert.alert('Lỗi', 'Không thể tải thông tin profile');
@@ -136,14 +158,42 @@ const ProfileScreen = ({ navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            // Clear stored data
-                            await AsyncStorage.multiRemove(['authToken', 'userData']);
+                            // Import AuthService để sử dụng logout method
+                            const AuthService = require('../services/AuthService').default;
+                            
+                            // Sử dụng AuthService logout
+                            await AuthService.logout();
+                            
+                            // Clear stored data (backup)
+                            await AsyncStorage.multiRemove([
+                                'authToken', 
+                                'userData', 
+                                'refreshToken',
+                                'cachedFavorites',
+                                'cachedMovies',
+                                'userPreferences',
+                                'watchHistory'
+                            ]);
+                            
+                            // Reset navigation to login screen
                             navigation.reset({
                                 index: 0,
-                                routes: [{ name: 'login' }],
+                                routes: [{ name: 'login' }], // Phải dùng chữ thường 'login' để khớp với App.js
                             });
                         } catch (error) {
                             console.error('Logout error:', error);
+                            
+                            // Fallback: Force clear and redirect anyway
+                            try {
+                                await AsyncStorage.clear();
+                                navigation.reset({
+                                    index: 0,
+                                    routes: [{ name: 'login' }],
+                                });
+                            } catch (fallbackError) {
+                                console.error('Fallback logout error:', fallbackError);
+                                Alert.alert('Lỗi', 'Không thể đăng xuất. Vui lòng thử lại.');
+                            }
                         }
                     }
                 }
@@ -157,46 +207,15 @@ const ProfileScreen = ({ navigation }) => {
     };
 
     const renderProfileTab = () => (
-        <View style={styles.tabContent}>
-            {/* ✨ NETFLIX FEATURE: Enhanced Stats Cards */}
-            <View style={styles.statsGrid}>
-                <NetflixStatCard
-                    icon="access-time"
-                    label="Thời gian xem"
-                    value={userStats ? ProfileService.formatWatchTime(userStats.totalWatchTime) : '0h'}
-                    subtitle="Tổng cộng"
-                    color="#E50914"
-                    gradient={['#E50914', '#FF6B6B']}
-                />
-                <NetflixStatCard
-                    icon="movie"
-                    label="Đã xem"
-                    value={userStats?.totalMoviesWatched || 0}
-                    subtitle="Phim & Shows"
-                    color="#FF6B6B"
-                    gradient={['#FF6B6B', '#FFD93D']}
-                />
-                <NetflixStatCard
-                    icon="star"
-                    label="Đánh giá"
-                    value={userStats?.reviewsCount || 0}
-                    subtitle={`TB: ${userStats?.avgRating?.toFixed(1) || '0.0'}`}
-                    color="#6BCF7F"
-                    gradient={['#6BCF7F', '#4D96FF']}
-                />
-                <NetflixStatCard
-                    icon="local-fire-department"
-                    label="Streak"
-                    value={userStats?.watchStreak || 0}
-                    subtitle="Ngày liên tiếp"
-                    color="#FFD93D"
-                    gradient={['#FFD93D', '#FF9A9E']}
-                />
-            </View>
-
+        <ScrollView style={styles.tabContent}>
             {/* Profile Info Section */}
             <NetflixSection title="👤 Thông tin cá nhân" subtitle="Chi tiết tài khoản">
                 <View style={styles.profileInfoContainer}>
+                    <ProfileInfoItem
+                        icon="person"
+                        label="Họ và tên"
+                        value={profile?.fullName || 'Chưa cập nhật'}
+                    />
                     <ProfileInfoItem
                         icon="email"
                         label="Email"
@@ -208,9 +227,9 @@ const ProfileScreen = ({ navigation }) => {
                         value={profile?.phone || 'Chưa cập nhật'}
                     />
                     <ProfileInfoItem
-                        icon="location-on"
-                        label="Quốc gia"
-                        value={profile?.country || 'Chưa cập nhật'}
+                        icon="wc"
+                        label="Giới tính"
+                        value={profile?.gender || 'Chưa cập nhật'}
                     />
                     <ProfileInfoItem
                         icon="cake"
@@ -218,34 +237,50 @@ const ProfileScreen = ({ navigation }) => {
                         value={profile?.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString('vi-VN') : 'Chưa cập nhật'}
                     />
                     <ProfileInfoItem
+                        icon="location-on"
+                        label="Địa chỉ"
+                        value={profile?.country || 'Chưa cập nhật'}
+                    />
+                    <ProfileInfoItem
+                        icon="verified-user"
+                        label="Trạng thái"
+                        value={profile?.isVerified ? 'Đã xác thực' : 'Chưa xác thực'}
+                    />
+                    <ProfileInfoItem
                         icon="schedule"
-                        label="Tham gia"
+                        label="Ngày tham gia"
                         value={profile?.joinDate ? new Date(profile.joinDate).toLocaleDateString('vi-VN') : 'Chưa rõ'}
                     />
                 </View>
             </NetflixSection>
 
-            {/* ✨ NETFLIX FEATURE: Favorite Genres */}
-            {userStats?.favoriteGenres && userStats.favoriteGenres.length > 0 && (
-                <NetflixSection title="🎭 Thể loại yêu thích" subtitle="Sở thích của bạn">
-                    <View style={styles.genreContainer}>
-                        {userStats.favoriteGenres.map((genre, index) => (
-                            <GenreChip key={index} title={genre} />
-                        ))}
+            {/* Only show stats section if we have stats data */}
+            {userStats && (
+                <NetflixSection title="📊 Thống kê" subtitle="Hoạt động của bạn">
+                    <View style={styles.statsContainer}>
+                        <StatItem
+                            icon="movie"
+                            label="Phim đã xem"
+                            value={userStats.totalMoviesWatched}
+                            color="#E50914"
+                        />
+                        <StatItem
+                            icon="timer"
+                            label="Thời gian xem"
+                            value={ProfileService.formatWatchTime(userStats.totalWatchTime)}
+                            color="#E50914"
+                        />
+                        <StatItem
+                            icon="star"
+                            label="Đánh giá"
+                            value={userStats.reviewsCount}
+                            color="#E50914"
+                        />
                     </View>
                 </NetflixSection>
             )}
 
-            {/* Bio Section */}
-            {profile?.bio && (
-                <NetflixSection title="📝 Giới thiệu" subtitle="Về bản thân">
-                    <View style={styles.bioContainer}>
-                        <Text style={styles.bioText}>{profile.bio}</Text>
-                    </View>
-                </NetflixSection>
-            )}
-
-            {/* ✨ NETFLIX FEATURE: Quick Actions */}
+            {/* Quick Actions Section */}
             <NetflixSection title="⚡ Quản lý tài khoản" subtitle="Cài đặt & tính năng">
                 <View style={styles.quickActions}>
                     <QuickActionButton
@@ -264,7 +299,7 @@ const ProfileScreen = ({ navigation }) => {
                         icon="history"
                         title="Lịch sử"
                         subtitle="Xem gần đây"
-                        onPress={() => console.log('History')}
+                        onPress={() => navigation.navigate('WatchHistory')}
                     />
                     <QuickActionButton
                         icon="favorite"
@@ -274,6 +309,84 @@ const ProfileScreen = ({ navigation }) => {
                     />
                 </View>
             </NetflixSection>
+        </ScrollView>
+    );
+
+    const renderSettingsTab = () => (
+        <View style={styles.tabContent}>
+            <NetflixSection title="⚙️ Cài đặt tài khoản" subtitle="Tùy chỉnh trải nghiệm của bạn">
+                <NetflixSettingItem
+                    icon="notifications"
+                    title="Thông báo"
+                    subtitle="Nhận thông báo về phim mới"
+                    value={settings.notifications}
+                    onValueChange={(value) => handleSaveSetting('notifications', value)}
+                />
+                <NetflixSettingItem
+                    icon="play-arrow"
+                    title="Tự động phát"
+                    subtitle="Tự động phát tập tiếp theo"
+                    value={settings.autoPlay}
+                    onValueChange={(value) => handleSaveSetting('autoPlay', value)}
+                />
+                <NetflixSettingItem
+                    icon="wifi"
+                    title="Tải chỉ qua WiFi"
+                    subtitle="Tiết kiệm dữ liệu di động"
+                    value={settings.downloadWifi}
+                    onValueChange={(value) => handleSaveSetting('downloadWifi', value)}
+                />
+                <NetflixSettingItem
+                    icon="dark-mode"
+                    title="Chế độ tối"
+                    subtitle="Giao diện tối dễ nhìn"
+                    value={settings.darkMode}
+                    onValueChange={(value) => handleSaveSetting('darkMode', value)}
+                />
+                <NetflixSettingItem
+                    icon="data-usage"
+                    title="Tiết kiệm dữ liệu"
+                    subtitle="Giảm chất lượng để tiết kiệm"
+                    value={settings.dataReduction}
+                    onValueChange={(value) => handleSaveSetting('dataReduction', value)}
+                />
+                <NetflixSettingItem
+                    icon="child-care"
+                    title="Kiểm soát trẻ em"
+                    subtitle="Lọc nội dung phù hợp"
+                    value={settings.parentalControls}
+                    onValueChange={(value) => handleSaveSetting('parentalControls', value)}
+                />
+                <NetflixSettingItem
+                    icon="offline-bolt"
+                    title="Chế độ ngoại tuyến"
+                    subtitle="Cho phép xem offline"
+                    value={settings.offlineMode}
+                    onValueChange={(value) => handleSaveSetting('offlineMode', value)}
+                />
+            </NetflixSection>
+        </View>
+    );
+
+    const renderActivityTab = () => (
+        <View style={styles.tabContent}>
+            <NetflixSection title="📊 Hoạt động" subtitle="Thống kê sử dụng">
+                <ActivityChart />
+            </NetflixSection>
+
+            <NetflixSection title="🕐 Xem gần đây" subtitle="Lịch sử xem phim">
+                <RecentlyWatched />
+            </NetflixSection>
+
+            {userStats?.achievements && userStats.achievements.length > 0 && (
+                <NetflixSection title="🏆 Thành tích" subtitle="Huy hiệu đã đạt được">
+                    <View style={styles.achievementsContainer}>
+                        {userStats.achievements.map((achievement, index) => (
+                            <AchievementBadge key={index} title={achievement} />
+                        ))}
+                    </View>
+                </NetflixSection>
+            )}
         </View>
     );
 
@@ -1095,6 +1208,20 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.05)',
         borderRadius: 12,
         padding: 16,
+    },
+
+    // ✨ NETFLIX ACHIEVEMENTS CONTAINER
+    achievementsContainer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'flex-start',
+    },
+
+    // ✨ NETFLIX STATS STYLES
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
 });
 

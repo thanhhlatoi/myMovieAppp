@@ -509,7 +509,30 @@ class AuthService {
     async getCurrentUserId() {
         try {
             const userData = await this.getUserData();
-            return userData?.id || null;
+            let userId = userData?.id || userData?.userId || null;
+            
+            // If no user ID found, try to get from JWT token
+            if (!userId) {
+                const token = await this.getAuthToken();
+                if (token) {
+                    try {
+                        const decoded = jwtDecode(token);
+                        userId = decoded.userId || decoded.id || decoded.sub;
+                        
+                        // If we found userId from token, update stored user data
+                        if (userId && userData) {
+                            const updatedUserData = { ...userData, id: userId };
+                            await this.setUserData(updatedUserData);
+                            this.log('Updated user data with ID from token:', userId);
+                        }
+                    } catch (jwtError) {
+                        this.log('JWT decode error in getCurrentUserId:', jwtError);
+                    }
+                }
+            }
+            
+            this.log('Current user ID:', userId);
+            return userId;
         } catch (error) {
             this.log('Error getting current user ID:', error);
             return null;
@@ -666,6 +689,39 @@ class AuthService {
         } catch (error) {
             this.log('Server connection test failed:', error);
             return false;
+        }
+    }
+
+    // Fix user data if missing ID
+    async fixUserData() {
+        try {
+            this.log('Checking and fixing user data...');
+            
+            const userData = await this.getUserData();
+            const token = await this.getAuthToken();
+            
+            if (userData && token && !userData.id) {
+                try {
+                    const decoded = jwtDecode(token);
+                    const fixedUserData = {
+                        ...userData,
+                        id: decoded.userId || decoded.id,
+                        email: decoded.sub || userData.email,
+                        name: decoded.name || userData.name || userData.fullName
+                    };
+                    
+                    await this.setUserData(fixedUserData);
+                    this.log('User data fixed successfully:', { id: fixedUserData.id, email: fixedUserData.email });
+                    return fixedUserData;
+                } catch (jwtError) {
+                    this.log('JWT decode error in fixUserData:', jwtError);
+                }
+            }
+            
+            return userData;
+        } catch (error) {
+            this.log('Error fixing user data:', error);
+            return null;
         }
     }
 }

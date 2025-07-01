@@ -29,7 +29,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
         console.log('🔍 Validating video existence for ID:', videoId);
         
         // Check if video exists in database
-        const response = await fetch(`http://172.20.10.7:8082/api/videos/${videoId}`, {
+        const response = await fetch(`http://192.168.100.193:8082/api/videos/${videoId}`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -127,7 +127,7 @@ export default function VideoPlayerScreen({ route, navigation }) {
 
   // Server configuration
   const serverConfig = {
-    baseURL: 'http://172.20.10.7:8082/api/videofilm',
+    baseURL: 'http://192.168.100.193:8082/api/videofilm',
     masterEndpoint: `/stream/mobile/${videoId}`,
   };
 

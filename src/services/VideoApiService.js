@@ -2,7 +2,7 @@
 class VideoApiService {
     constructor() {
         // Thay đổi base URL để chỉ sử dụng mobile endpoints
-        this.baseURL = 'http://172.20.10.7:8082/api/videofilm';
+        this.baseURL = 'http://192.168.100.193:8082/api/videofilm';
     }
 
     async handleResponse(response) {
